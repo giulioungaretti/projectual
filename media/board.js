@@ -3,10 +3,17 @@
     const vscode = acquireVsCodeApi();
     const root = document.getElementById('board-root');
 
-    let currentData = { project: null, items: [], statusField: null, allLabels: [], swimlaneFields: [] };
-    let swimlaneMode = 'none'; // 'none' | 'label' | 'assignee' | 'parent' | field id
-    let activeLabels = new Set(); // selected labels for filtering (empty = show all)
-    let collapsedLanes = new Set(); // collapsed swimlane IDs
+    let currentData = { project: null, items: [], statusField: null, allLabels: [], allAssignees: [], singleSelectFields: [], swimlaneFields: [] };
+    let swimlaneMode = 'none';
+    let collapsedLanes = new Set();
+
+    // Filters: key = filter name, value = Set of selected values (empty = no filter)
+    let filters = {
+        labels: new Set(),        // label names
+        assignees: new Set(),     // login strings
+        fields: new Map(),        // fieldId → Set of optionIds
+        excludeLabels: new Set(), // label names to exclude
+    };
 
     window.addEventListener('message', event => {
         const msg = event.data;
@@ -35,16 +42,17 @@
                 break;
             case 'toggle-label': {
                 const label = target.dataset.label;
-                if (activeLabels.has(label)) {
-                    activeLabels.delete(label);
+                if (filters.labels.has(label)) {
+                    filters.labels.delete(label);
                 } else {
-                    activeLabels.add(label);
+                    filters.labels.add(label);
                 }
                 render();
                 break;
             }
             case 'clear-labels':
-                activeLabels.clear();
+                filters.labels.clear();
+                filters.excludeLabels.clear();
                 render();
                 break;
             case 'toggle-lane': {
@@ -67,29 +75,42 @@
             swimlaneMode = target.value;
             collapsedLanes.clear();
             render();
+        } else if (target.dataset.action === 'filter-field') {
+            const fieldId = target.dataset.fieldId;
+            const selected = new Set();
+            for (const opt of target.selectedOptions) {
+                if (opt.value) selected.add(opt.value);
+            }
+            if (selected.size > 0) {
+                filters.fields.set(fieldId, selected);
+            } else {
+                filters.fields.delete(fieldId);
+            }
+            render();
+        } else if (target.dataset.action === 'filter-assignee') {
+            filters.assignees.clear();
+            for (const opt of target.selectedOptions) {
+                if (opt.value) filters.assignees.add(opt.value);
+            }
+            render();
         }
     });
 
     function render() {
-        const { project, items, statusField, allLabels, swimlaneFields } = currentData;
+        const { project, items, statusField, allLabels, allAssignees, singleSelectFields, swimlaneFields } = currentData;
         if (!project || !statusField) {
             root.innerHTML = '<div class="loading">No project data yet.</div>';
             return;
         }
 
-        // Filter items by selected labels
+        // Apply all filters (AND logic)
         let filteredItems = items || [];
-        if (activeLabels.size > 0) {
-            filteredItems = filteredItems.filter(item => {
-                const labels = item.content?.labels?.nodes || [];
-                return labels.some(l => activeLabels.has(l.name));
-            });
-        }
+        filteredItems = applyFilters(filteredItems);
 
         const options = statusField.options || [];
 
         // Build toolbar
-        let html = renderToolbar(project, allLabels || [], swimlaneFields || []);
+        let html = renderToolbar(project, allLabels || [], allAssignees || [], singleSelectFields || [], swimlaneFields || []);
 
         // Render board based on swimlane mode
         if (swimlaneMode === 'none') {
@@ -102,7 +123,44 @@
         setupDragAndDrop();
     }
 
-    function renderToolbar(project, allLabels, swimlaneFields) {
+    function applyFilters(items) {
+        return items.filter(item => {
+            // Label include filter
+            if (filters.labels.size > 0) {
+                const itemLabels = item.content?.labels?.nodes || [];
+                if (!itemLabels.some(l => filters.labels.has(l.name))) return false;
+            }
+            // Label exclude filter
+            if (filters.excludeLabels.size > 0) {
+                const itemLabels = item.content?.labels?.nodes || [];
+                if (itemLabels.some(l => filters.excludeLabels.has(l.name))) return false;
+            }
+            // Assignee filter
+            if (filters.assignees.size > 0) {
+                const itemAssignees = item.content?.assignees?.nodes || [];
+                if (!itemAssignees.some(a => filters.assignees.has(a.login))) return false;
+            }
+            // Single-select field filters
+            for (const [fieldId, selectedOptions] of filters.fields) {
+                const fv = (item.fieldValues?.nodes || []).find(
+                    fv => fv.__typename === 'ProjectV2ItemFieldSingleSelectValue' && fv.field?.id === fieldId
+                );
+                if (!fv || !selectedOptions.has(fv.optionId)) return false;
+            }
+            return true;
+        });
+    }
+
+    function getActiveFilterCount() {
+        let count = 0;
+        if (filters.labels.size > 0) count++;
+        if (filters.excludeLabels.size > 0) count++;
+        if (filters.assignees.size > 0) count++;
+        count += filters.fields.size;
+        return count;
+    }
+
+    function renderToolbar(project, allLabels, allAssignees, singleSelectFields, swimlaneFields) {
         let html = '<div class="board-toolbar">';
         html += `<h2>${escapeHtml(project.title)}</h2>`;
 
@@ -119,24 +177,62 @@
         });
         html += '</select></div>';
 
-        // Label filter chips
+        html += '<button data-action="refresh">↻ Refresh</button>';
+        html += '</div>';
+
+        // Filter bar
+        const filterCount = getActiveFilterCount();
+        html += '<div class="filter-bar">';
+        html += `<span class="filter-bar-label">Filters${filterCount > 0 ? ` (${filterCount})` : ''}:</span>`;
+
+        // Single-select field filters (Horizon, Priority, etc.)
+        (singleSelectFields || []).filter(f => f.name !== 'Status').forEach(field => {
+            const activeSet = filters.fields.get(field.id);
+            html += '<div class="filter-dropdown">';
+            html += `<select data-action="filter-field" data-field-id="${escapeHtml(field.id)}" class="toolbar-select filter-select" multiple size="1" title="${escapeHtml(field.name)}">`;
+            (field.options || []).forEach(opt => {
+                const sel = activeSet && activeSet.has(opt.id) ? ' selected' : '';
+                html += `<option value="${escapeHtml(opt.id)}"${sel}>${escapeHtml(opt.name)}</option>`;
+            });
+            html += '</select>';
+            html += `<span class="filter-dropdown-label">${escapeHtml(field.name)}</span>`;
+            html += '</div>';
+        });
+
+        // Assignee filter
+        if (allAssignees && allAssignees.length > 0) {
+            html += '<div class="filter-dropdown">';
+            html += '<select data-action="filter-assignee" class="toolbar-select filter-select" multiple size="1" title="Assignee">';
+            allAssignees.forEach(login => {
+                const sel = filters.assignees.has(login) ? ' selected' : '';
+                html += `<option value="${escapeHtml(login)}"${sel}>@${escapeHtml(login)}</option>`;
+            });
+            html += '</select>';
+            html += '<span class="filter-dropdown-label">Assignee</span>';
+            html += '</div>';
+        }
+
+        // Label chips (toggle include)
         if (allLabels && allLabels.length > 0) {
             html += '<div class="toolbar-group label-filters">';
-            html += '<label class="toolbar-label">Labels:</label>';
             allLabels.forEach(l => {
-                const isActive = activeLabels.has(l.name);
-                html += `<span class="filter-chip${isActive ? ' active' : ''}" `
+                const isIncluded = filters.labels.has(l.name);
+                const isExcluded = filters.excludeLabels.has(l.name);
+                let chipClass = 'filter-chip';
+                let prefix = '';
+                if (isIncluded) { chipClass += ' active'; }
+                if (isExcluded) { chipClass += ' excluded'; prefix = '−'; }
+                html += `<span class="${chipClass}" `
                     + `data-action="toggle-label" data-label="${escapeHtml(l.name)}" `
                     + `style="--chip-bg:#${l.color};--chip-fg:${getContrastColor(l.color)}">`
-                    + `${escapeHtml(l.name)}</span>`;
+                    + `${prefix}${escapeHtml(l.name)}</span>`;
             });
-            if (activeLabels.size > 0) {
-                html += '<span class="filter-chip clear-chip" data-action="clear-labels">✕ Clear</span>';
+            if (filters.labels.size > 0 || filters.excludeLabels.size > 0) {
+                html += '<span class="filter-chip clear-chip" data-action="clear-labels">✕</span>';
             }
             html += '</div>';
         }
 
-        html += '<button data-action="refresh">↻ Refresh</button>';
         html += '</div>';
         return html;
     }

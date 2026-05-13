@@ -206,6 +206,51 @@ body {
     font-family: inherit;
 }
 
+/* Filter bar */
+.filter-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 0 12px;
+    flex-wrap: wrap;
+    border-bottom: 1px solid var(--vscode-panel-border);
+    margin-bottom: 12px;
+}
+
+.filter-bar-label {
+    font-size: 0.85em;
+    font-weight: 600;
+    color: var(--vscode-descriptionForeground);
+    white-space: nowrap;
+}
+
+.filter-dropdown {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    position: relative;
+}
+
+.filter-dropdown-label {
+    font-size: 0.7em;
+    color: var(--vscode-descriptionForeground);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.filter-select {
+    min-width: 90px;
+    max-width: 140px;
+    height: 26px;
+    overflow: hidden;
+}
+
+.filter-select[multiple] {
+    height: auto;
+    min-height: 26px;
+    max-height: 80px;
+}
+
 /* Label filter chips */
 .label-filters {
     flex-wrap: wrap;
@@ -233,6 +278,12 @@ body {
 .filter-chip.active {
     opacity: 1;
     border-color: var(--vscode-focusBorder);
+}
+
+.filter-chip.excluded {
+    opacity: 0.7;
+    text-decoration: line-through;
+    border-color: var(--vscode-errorForeground, #f44);
 }
 
 .filter-chip.clear-chip {

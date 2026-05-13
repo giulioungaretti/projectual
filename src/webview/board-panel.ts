@@ -66,8 +66,9 @@ export class BoardPanel {
         const items = this.model.getProjectItems(this.projectId);
         const statusField = this.model.getStatusField(this.projectId);
 
-        // Collect all unique labels across items for the filter
+        // Collect all unique labels across items
         const labelSet = new Map<string, { name: string; color: string }>();
+        const assigneeSet = new Map<string, string>();
         for (const item of items) {
             if (item.content?.__typename === 'Issue') {
                 for (const label of (item.content as any).labels?.nodes ?? []) {
@@ -75,13 +76,19 @@ export class BoardPanel {
                         labelSet.set(label.name, { name: label.name, color: label.color });
                     }
                 }
+                for (const a of (item.content as any).assignees?.nodes ?? []) {
+                    assigneeSet.set(a.login, a.login);
+                }
             }
         }
 
-        // Collect single-select fields (for swimlane options, excluding Status)
-        const swimlaneFields = (detail?.fields.nodes ?? [])
-            .filter((f: any) => f.__typename === 'ProjectV2SingleSelectField' && f.name !== 'Status')
+        // All single-select fields (for swimlanes and filters)
+        const singleSelectFields = (detail?.fields.nodes ?? [])
+            .filter((f: any) => f.__typename === 'ProjectV2SingleSelectField')
             .map((f: any) => ({ id: f.id, name: f.name, options: f.options }));
+
+        // Swimlane fields = single-select minus Status
+        const swimlaneFields = singleSelectFields.filter((f: any) => f.name !== 'Status');
 
         this.panel.webview.postMessage({
             type: 'update-board',
@@ -89,6 +96,8 @@ export class BoardPanel {
             items: items.filter(i => i.type !== 'REDACTED'),
             statusField,
             allLabels: Array.from(labelSet.values()),
+            allAssignees: Array.from(assigneeSet.values()),
+            singleSelectFields,
             swimlaneFields,
         });
     }
