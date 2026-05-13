@@ -14,6 +14,43 @@
         }
     });
 
+    // Event delegation — handles all clicks and changes via data attributes
+    root.addEventListener('click', function (e) {
+        const target = e.target.closest('[data-action]');
+        if (!target) return;
+        switch (target.dataset.action) {
+            case 'edit':
+                editMode = true;
+                render();
+                break;
+            case 'save':
+                handleSave();
+                break;
+            case 'cancel':
+                editMode = false;
+                render();
+                break;
+            case 'open-in-github':
+                vscode.postMessage({ type: 'open-in-github' });
+                break;
+        }
+    });
+
+    root.addEventListener('change', function (e) {
+        const target = e.target.closest('[data-action]');
+        if (!target) return;
+        if (target.dataset.action === 'status-change') {
+            const { item, statusField } = currentData;
+            if (!item || !statusField) return;
+            vscode.postMessage({
+                type: 'update-field',
+                itemId: item.id,
+                fieldId: statusField.id,
+                value: { singleSelectOptionId: target.value },
+            });
+        }
+    });
+
     function render() {
         const { item, projectFields, statusField } = currentData;
         if (!item || !item.content) {
@@ -51,14 +88,14 @@
         // Actions
         html += '<div class="issue-actions">';
         if (editMode) {
-            html += '<button onclick="handleSave()">Save</button>';
-            html += '<button class="secondary" onclick="handleCancel()">Cancel</button>';
+            html += '<button data-action="save">Save</button>';
+            html += '<button class="secondary" data-action="cancel">Cancel</button>';
         } else {
             if (isIssue || isDraft) {
-                html += '<button onclick="handleEdit()">Edit</button>';
+                html += '<button data-action="edit">Edit</button>';
             }
             if (isIssue) {
-                html += '<button class="secondary" onclick="handleOpenInGitHub()">Open in GitHub</button>';
+                html += '<button class="secondary" data-action="open-in-github">Open in GitHub</button>';
             }
         }
         html += '</div>';
@@ -74,7 +111,7 @@
             html += '<div class="field-group">';
             html += '<span class="field-label">Status</span>';
             html += '<div class="field-value">';
-            html += `<select onchange="handleStatusChange(this.value)">`;
+            html += `<select data-action="status-change">`;
             (statusField.options || []).forEach(opt => {
                 const selected = statusFv && statusFv.optionId === opt.id ? ' selected' : '';
                 html += `<option value="${escapeAttr(opt.id)}"${selected}>${escapeHtml(opt.name)}</option>`;
@@ -161,18 +198,7 @@
         }
     }
 
-    // Globals
-    window.handleEdit = function () {
-        editMode = true;
-        render();
-    };
-
-    window.handleCancel = function () {
-        editMode = false;
-        render();
-    };
-
-    window.handleSave = function () {
+    function handleSave() {
         const content = currentData.item?.content;
         if (!content) return;
 
@@ -188,22 +214,7 @@
 
         vscode.postMessage(msg);
         editMode = false;
-    };
-
-    window.handleStatusChange = function (optionId) {
-        const { item, statusField } = currentData;
-        if (!item || !statusField) return;
-        vscode.postMessage({
-            type: 'update-field',
-            itemId: item.id,
-            fieldId: statusField.id,
-            value: { singleSelectOptionId: optionId },
-        });
-    };
-
-    window.handleOpenInGitHub = function () {
-        vscode.postMessage({ type: 'open-in-github' });
-    };
+    }
 
     function escapeHtml(str) {
         if (!str) return '';

@@ -13,6 +13,25 @@
         }
     });
 
+    // Event delegation — handles all clicks via data attributes
+    root.addEventListener('click', function (e) {
+        const actionTarget = e.target.closest('[data-action]');
+        if (actionTarget) {
+            switch (actionTarget.dataset.action) {
+                case 'refresh':
+                    vscode.postMessage({ type: 'refresh' });
+                    return;
+                case 'open-item': {
+                    const itemId = actionTarget.dataset.itemId;
+                    if (itemId) {
+                        vscode.postMessage({ type: 'open-item', itemId });
+                    }
+                    return;
+                }
+            }
+        }
+    });
+
     function render() {
         const { project, items, statusField } = currentData;
         if (!project || !statusField) {
@@ -40,7 +59,7 @@
         let html = `
             <div class="board-toolbar">
                 <h2>${escapeHtml(project.title)}</h2>
-                <button onclick="handleRefresh()">↻ Refresh</button>
+                <button data-action="refresh">↻ Refresh</button>
             </div>
             <div class="board">
         `;
@@ -122,7 +141,7 @@
 
         return `
             <div class="card" draggable="true" data-item-id="${escapeHtml(item.id)}"
-                 onclick="handleCardClick('${escapeHtml(item.id)}')">
+                 data-action="open-item">
                 <div class="card-title">${escapeHtml(title)}</div>
                 <div class="card-meta">${metaHtml}</div>
                 ${labelsHtml}
@@ -169,15 +188,6 @@
             });
         });
     }
-
-    // Globals for onclick handlers
-    window.handleCardClick = function (itemId) {
-        vscode.postMessage({ type: 'open-item', itemId });
-    };
-
-    window.handleRefresh = function () {
-        vscode.postMessage({ type: 'refresh' });
-    };
 
     function escapeHtml(str) {
         if (!str) return '';
