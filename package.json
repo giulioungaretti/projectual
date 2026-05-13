@@ -1,7 +1,7 @@
 {
-  "name": "gh-projects-vscode",
-  "displayName": "GitHub Projects v2",
-  "description": "View and manage GitHub Projects v2 boards, issues, and fields directly in VS Code",
+  "name": "projectual",
+  "displayName": "Projectual — GitHub Projects in VS Code",
+  "description": "Kanban boards, swimlanes, issue editing, and dashboards for GitHub Projects v2 — without leaving VS Code",
   "version": "0.1.0",
   "publisher": "giulioungaretti",
   "license": "MIT",

@@ -1,9 +1,9 @@
 import * as vscode from 'vscode';
+import { GraphQLClient } from '../api/graphql-client';
+import * as queries from '../api/queries';
+import { ProjectItem } from '../api/types';
 import { ProjectModel } from '../models/project-model';
 import { IssueDocumentProvider } from '../webview/issue-document-provider';
-import { ProjectItem, ProjectV2, IssueContent } from '../api/types';
-import * as queries from '../api/queries';
-import { GraphQLClient } from '../api/graphql-client';
 
 export function registerIssueCommands(
     context: vscode.ExtensionContext,

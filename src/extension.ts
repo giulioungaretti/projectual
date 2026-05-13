@@ -1,16 +1,16 @@
 import * as vscode from 'vscode';
-import { GitHubAuth } from './auth/github-auth';
 import { GraphQLClient } from './api/graphql-client';
-import { ProjectModel } from './models/project-model';
-import { ProjectTreeProvider } from './tree/project-tree-provider';
-import { registerProjectCommands } from './commands/project-commands';
-import { registerIssueCommands } from './commands/issue-commands';
+import { GitHubAuth } from './auth/github-auth';
 import { registerFieldCommands } from './commands/field-commands';
-import { IssueDocumentProvider, ISSUE_SCHEME } from './webview/issue-document-provider';
+import { registerIssueCommands } from './commands/issue-commands';
+import { registerProjectCommands } from './commands/project-commands';
+import { ProjectModel } from './models/project-model';
 import { IssueCodeLensProvider } from './providers/issue-codelens-provider';
+import { activateIssueDecorations } from './providers/issue-decoration-provider';
 import { IssueDiagnosticProvider } from './providers/issue-diagnostic-provider';
 import { IssueFoldingProvider } from './providers/issue-folding-provider';
-import { activateIssueDecorations } from './providers/issue-decoration-provider';
+import { ProjectTreeProvider } from './tree/project-tree-provider';
+import { ISSUE_SCHEME, IssueDocumentProvider } from './webview/issue-document-provider';
 
 export function activate(context: vscode.ExtensionContext): void {
     const auth = new GitHubAuth();

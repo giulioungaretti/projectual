@@ -1,12 +1,15 @@
 import * as vscode from 'vscode';
 import { GraphQLClient } from '../api/graphql-client';
-import {
-    ProjectV2, ProjectDetail, ProjectItem, ProjectField,
-    ProjectSingleSelectField, FieldValue, SingleSelectFieldValue,
-    IssueContent, ProjectItemsPage, PageInfo,
-} from '../api/types';
-import * as queries from '../api/queries';
 import * as mutations from '../api/mutations';
+import * as queries from '../api/queries';
+import {
+    IssueContent,
+    PageInfo,
+    ProjectDetail, ProjectItem,
+    ProjectSingleSelectField,
+    ProjectV2,
+    SingleSelectFieldValue
+} from '../api/types';
 
 export class ProjectModel {
     private _onDidChange = new vscode.EventEmitter<void>();
