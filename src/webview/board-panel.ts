@@ -92,7 +92,11 @@ export class BoardPanel {
             }
             case 'open-item': {
                 const m = msg as OpenItemMessage;
-                vscode.commands.executeCommand('ghProjects.openItem', m.projectId, m.itemId);
+                const itemId = m.itemId;
+                const item = this.model.getProjectItems(this.projectId).find(i => i.id === itemId);
+                if (item) {
+                    vscode.commands.executeCommand('ghProjects.openItem', this.projectId, item);
+                }
                 break;
             }
             case 'refresh':
