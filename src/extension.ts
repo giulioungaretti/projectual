@@ -35,6 +35,10 @@ export function activate(context: vscode.ExtensionContext): void {
     registerIssueCommands(context, model, client, issueDocProvider);
     registerFieldCommands(context, model, client);
 
+    // Set initial context values
+    vscode.commands.executeCommand('setContext', 'ghProjects.groupBy', 'none');
+    vscode.commands.executeCommand('setContext', 'ghProjects.hasFocusedProject', false);
+
     // Status bar
     const statusBar = vscode.window.createStatusBarItem(
         vscode.StatusBarAlignment.Left, 50

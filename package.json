@@ -114,6 +114,18 @@
         "title": "Show All Projects",
         "category": "GitHub Projects",
         "icon": "$(close)"
+      },
+      {
+        "command": "ghProjects.groupByStatus",
+        "title": "Group by Status",
+        "category": "GitHub Projects",
+        "icon": "$(list-filter)"
+      },
+      {
+        "command": "ghProjects.groupByNone",
+        "title": "Clear Grouping",
+        "category": "GitHub Projects",
+        "icon": "$(list-flat)"
       }
     ],
     "menus": {
@@ -129,9 +141,19 @@
           "group": "navigation@2"
         },
         {
+          "command": "ghProjects.groupByStatus",
+          "when": "view == ghProjects.projectList && ghProjects.groupBy != status",
+          "group": "navigation@3"
+        },
+        {
+          "command": "ghProjects.groupByNone",
+          "when": "view == ghProjects.projectList && ghProjects.groupBy == status",
+          "group": "navigation@3"
+        },
+        {
           "command": "ghProjects.createDraft",
           "when": "view == ghProjects.projectList",
-          "group": "navigation@3"
+          "group": "navigation@4"
         }
       ],
       "view/item/context": [

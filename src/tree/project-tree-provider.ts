@@ -5,12 +5,15 @@ import { ProjectModel } from '../models/project-model';
 import { GitHubAuth } from '../auth/github-auth';
 import { ProjectItem, IssueContent, SingleSelectFieldValue } from '../api/types';
 
+export type GroupByMode = 'none' | 'status';
+
 export class ProjectTreeProvider implements vscode.TreeDataProvider<TreeElement> {
     private _onDidChangeTreeData = new vscode.EventEmitter<TreeElement | undefined | void>();
     readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
     private _loading = false;
     private _focusedProjectId: string | undefined;
+    private _groupBy: GroupByMode = 'none';
 
     constructor(
         private model: ProjectModel,
@@ -22,6 +25,16 @@ export class ProjectTreeProvider implements vscode.TreeDataProvider<TreeElement>
 
     get focusedProjectId(): string | undefined {
         return this._focusedProjectId;
+    }
+
+    get groupBy(): GroupByMode {
+        return this._groupBy;
+    }
+
+    setGroupBy(mode: GroupByMode): void {
+        this._groupBy = mode;
+        vscode.commands.executeCommand('setContext', 'ghProjects.groupBy', mode);
+        this._onDidChangeTreeData.fire();
     }
 
     focusProject(projectId: string): void {
@@ -122,7 +135,9 @@ export class ProjectTreeProvider implements vscode.TreeDataProvider<TreeElement>
         });
 
         const statusField = this.model.getStatusField(projectId);
-        if (!statusField) {
+
+        // No grouping (default) — flat list with sub-issue nesting only
+        if (this._groupBy === 'none' || !statusField) {
             return topLevelItems.map((item): ItemNode => ({
                 type: 'item', projectId, item,
             }));

@@ -126,5 +126,13 @@ export function registerProjectCommands(
         vscode.commands.registerCommand('ghProjects.clearFocus', () => {
             treeProvider.clearFocus();
         }),
+
+        vscode.commands.registerCommand('ghProjects.groupByStatus', () => {
+            treeProvider.setGroupBy('status');
+        }),
+
+        vscode.commands.registerCommand('ghProjects.groupByNone', () => {
+            treeProvider.setGroupBy('none');
+        }),
     );
 }
