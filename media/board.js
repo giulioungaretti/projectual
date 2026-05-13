@@ -215,22 +215,15 @@
                 if (val === 'draft') return content?.__typename === 'DraftIssue';
                 if (val === 'pr') return content?.__typename === 'PullRequest';
                 if (val === 'issue') return content?.__typename === 'Issue';
-                // is:blocked checks the Status field for "Blocked" (matches GitHub Projects behavior)
+                // is:blocked = has at least one OPEN blocker (closed blockers don't count)
                 if (val === 'blocked') {
-                    const statusFv = getStatusFieldValue(item);
-                    return statusFv?.name?.toLowerCase() === 'blocked';
+                    const blockers = content?.blockedBy?.nodes || [];
+                    return blockers.some(b => b.state === 'OPEN');
                 }
-                // is:blocking checks the Status field for "Blocking"
                 if (val === 'blocking') {
-                    const statusFv = getStatusFieldValue(item);
-                    return statusFv?.name?.toLowerCase() === 'blocking';
+                    const blocking = content?.blocking?.nodes || [];
+                    return blocking.some(b => b.state === 'OPEN');
                 }
-                return false;
-            }
-            // has:blockers / has:blocking checks the actual dependency relationships
-            case 'has': {
-                if (val === 'blockers') return (content?.blockedBy?.totalCount || 0) > 0;
-                if (val === 'blocking') return (content?.blocking?.totalCount || 0) > 0;
                 return false;
             }
             case 'milestone': {
@@ -554,8 +547,10 @@
         if (!content) return '';
 
         const title = content.title || '(Untitled)';
-        const isBlocked = content.__typename === 'Issue' && (content.blockedBy?.totalCount || 0) > 0;
-        const isBlocking = content.__typename === 'Issue' && (content.blocking?.totalCount || 0) > 0;
+        const openBlockers = (content.__typename === 'Issue' ? (content.blockedBy?.nodes || []) : []).filter(b => b.state === 'OPEN');
+        const openBlocking = (content.__typename === 'Issue' ? (content.blocking?.nodes || []) : []).filter(b => b.state === 'OPEN');
+        const isBlocked = openBlockers.length > 0;
+        const isBlocking = openBlocking.length > 0;
         let metaHtml = '';
         let labelsHtml = '';
         let assigneesHtml = '';
@@ -588,11 +583,11 @@
             }
 
             if (isBlocked) {
-                const blockers = content.blockedBy.nodes.map(b => `#${b.number} ${b.title}`).join(', ');
-                blockedHtml = `<div class="card-blocked" title="Blocked by: ${escapeHtml(blockers)}">🚫 Blocked by ${content.blockedBy.nodes.map(b => '#' + b.number).join(', ')}</div>`;
+                const blockers = openBlockers.map(b => `#${b.number} ${b.title}`).join(', ');
+                blockedHtml = `<div class="card-blocked" title="Blocked by: ${escapeHtml(blockers)}">🚫 Blocked by ${openBlockers.map(b => '#' + b.number).join(', ')}</div>`;
             }
             if (isBlocking) {
-                blockedHtml += `<div class="card-blocking" title="Blocking other issues">⏳ Blocking ${content.blocking.nodes.map(b => '#' + b.number).join(', ')}</div>`;
+                blockedHtml += `<div class="card-blocking" title="Blocking other issues">⏳ Blocking ${openBlocking.map(b => '#' + b.number).join(', ')}</div>`;
             }
         } else if (content.__typename === 'DraftIssue') {
             metaHtml = '<span class="card-repo">Draft</span>';

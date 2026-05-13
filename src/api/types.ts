@@ -183,6 +183,7 @@ export interface BlockingRef {
     number: number;
     title: string;
     url: string;
+    state: 'OPEN' | 'CLOSED';
 }
 
 export interface Assignee {
