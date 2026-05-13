@@ -54,6 +54,7 @@ export function activate(context: vscode.ExtensionContext): void {
     // Set initial context values
     vscode.commands.executeCommand('setContext', 'ghProjects.groupBy', 'none');
     vscode.commands.executeCommand('setContext', 'ghProjects.hasFocusedProject', false);
+    vscode.commands.executeCommand('setContext', 'ghProjects.hasTreeFilter', false);
 
     // Status bar
     const statusBar = vscode.window.createStatusBarItem(

@@ -134,6 +134,18 @@
         "title": "Clear Grouping",
         "category": "GitHub Projects",
         "icon": "$(list-flat)"
+      },
+      {
+        "command": "ghProjects.filterTree",
+        "title": "Filter Items",
+        "category": "GitHub Projects",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "ghProjects.clearTreeFilter",
+        "title": "Clear Filter",
+        "category": "GitHub Projects",
+        "icon": "$(filter-clear)"
       }
     ],
     "menus": {
@@ -157,6 +169,16 @@
           "command": "ghProjects.groupByNone",
           "when": "view == ghProjects.projectList && ghProjects.groupBy == status",
           "group": "navigation@3"
+        },
+        {
+          "command": "ghProjects.filterTree",
+          "when": "view == ghProjects.projectList && !ghProjects.hasTreeFilter",
+          "group": "navigation@4"
+        },
+        {
+          "command": "ghProjects.clearTreeFilter",
+          "when": "view == ghProjects.projectList && ghProjects.hasTreeFilter",
+          "group": "navigation@4"
         },
         {
           "command": "ghProjects.createDraft",

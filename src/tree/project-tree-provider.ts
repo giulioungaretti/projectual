@@ -4,6 +4,7 @@ import { createTreeItem } from './tree-items';
 import { ProjectModel } from '../models/project-model';
 import { GitHubAuth } from '../auth/github-auth';
 import { ProjectItem, IssueContent, SingleSelectFieldValue } from '../api/types';
+import { applyFilter } from '../utils/filter';
 
 export type GroupByMode = 'none' | 'status';
 
@@ -14,6 +15,33 @@ export class ProjectTreeProvider implements vscode.TreeDataProvider<TreeElement>
     private _loading = false;
     private _focusedProjectId: string | undefined;
     private _groupBy: GroupByMode = 'none';
+    private _filterQuery: string = '';
+
+    constructor(
+        private model: ProjectModel,
+        private auth: GitHubAuth,
+    ) {
+        model.onDidChange(() => this._onDidChangeTreeData.fire());
+        auth.onDidChangeAuth(() => this._onDidChangeTreeData.fire());
+    }
+
+    get focusedProjectId(): string | undefined {
+        return this._focusedProjectId;
+    }
+
+    get groupBy(): GroupByMode {
+        return this._groupBy;
+    }
+
+    get filterQuery(): string {
+        return this._filterQuery;
+    }
+
+    setFilter(query: string): void {
+        this._filterQuery = query;
+        vscode.commands.executeCommand('setContext', 'ghProjects.hasTreeFilter', query.length > 0);
+        this._onDidChangeTreeData.fire();
+    }
 
     constructor(
         private model: ProjectModel,
@@ -125,7 +153,7 @@ export class ProjectTreeProvider implements vscode.TreeDataProvider<TreeElement>
         const childIssueIds = this.model.getChildIssueIds(projectId);
 
         // Filter to only top-level items (not sub-issues of another item in the project)
-        const topLevelItems = items.filter(item => {
+        let topLevelItems = items.filter(item => {
             if (item.type === 'REDACTED') { return false; }
             if (item.content?.__typename === 'Issue') {
                 const issue = item.content as IssueContent;
@@ -133,6 +161,11 @@ export class ProjectTreeProvider implements vscode.TreeDataProvider<TreeElement>
             }
             return true;
         });
+
+        // Apply text filter if active
+        if (this._filterQuery) {
+            topLevelItems = applyFilter(topLevelItems, this._filterQuery, this.model, projectId);
+        }
 
         const statusField = this.model.getStatusField(projectId);
 

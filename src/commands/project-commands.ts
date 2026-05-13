@@ -134,5 +134,20 @@ export function registerProjectCommands(
         vscode.commands.registerCommand('ghProjects.groupByNone', () => {
             treeProvider.setGroupBy('none');
         }),
+
+        vscode.commands.registerCommand('ghProjects.filterTree', async () => {
+            const value = await vscode.window.showInputBox({
+                prompt: 'Filter items (e.g. priority:Now -label:epic milestone:MVP is:open)',
+                value: treeProvider.filterQuery,
+                placeHolder: 'priority:Now -label:epic assignee:user is:open',
+            });
+            if (value !== undefined) {
+                treeProvider.setFilter(value);
+            }
+        }),
+
+        vscode.commands.registerCommand('ghProjects.clearTreeFilter', () => {
+            treeProvider.setFilter('');
+        }),
     );
 }
