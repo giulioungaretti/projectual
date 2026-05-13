@@ -43,22 +43,6 @@ export class ProjectTreeProvider implements vscode.TreeDataProvider<TreeElement>
         this._onDidChangeTreeData.fire();
     }
 
-    constructor(
-        private model: ProjectModel,
-        private auth: GitHubAuth,
-    ) {
-        model.onDidChange(() => this._onDidChangeTreeData.fire());
-        auth.onDidChangeAuth(() => this._onDidChangeTreeData.fire());
-    }
-
-    get focusedProjectId(): string | undefined {
-        return this._focusedProjectId;
-    }
-
-    get groupBy(): GroupByMode {
-        return this._groupBy;
-    }
-
     setGroupBy(mode: GroupByMode): void {
         this._groupBy = mode;
         vscode.commands.executeCommand('setContext', 'ghProjects.groupBy', mode);
