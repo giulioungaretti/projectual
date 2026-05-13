@@ -4,8 +4,9 @@
     const root = document.getElementById('board-root');
 
     let currentData = { project: null, items: [], statusField: null, allLabels: [], swimlaneFields: [] };
-    let swimlaneMode = 'none'; // 'none' | 'label' | 'assignee' | field id
+    let swimlaneMode = 'none'; // 'none' | 'label' | 'assignee' | 'parent' | field id
     let activeLabels = new Set(); // selected labels for filtering (empty = show all)
+    let collapsedLanes = new Set(); // collapsed swimlane IDs
 
     window.addEventListener('message', event => {
         const msg = event.data;
@@ -19,6 +20,10 @@
     root.addEventListener('click', function (e) {
         const target = e.target.closest('[data-action]');
         if (!target) return;
+
+        // Prevent card open-item from firing when clicking nested actions
+        e.stopPropagation();
+
         switch (target.dataset.action) {
             case 'refresh':
                 vscode.postMessage({ type: 'refresh' });
@@ -42,6 +47,16 @@
                 activeLabels.clear();
                 render();
                 break;
+            case 'toggle-lane': {
+                const laneId = target.dataset.laneId;
+                if (collapsedLanes.has(laneId)) {
+                    collapsedLanes.delete(laneId);
+                } else {
+                    collapsedLanes.add(laneId);
+                }
+                render();
+                break;
+            }
         }
     });
 
@@ -50,6 +65,7 @@
         if (!target) return;
         if (target.dataset.action === 'swimlane-select') {
             swimlaneMode = target.value;
+            collapsedLanes.clear();
             render();
         }
     });
@@ -95,6 +111,7 @@
         html += '<label class="toolbar-label">Swimlanes:</label>';
         html += '<select data-action="swimlane-select" class="toolbar-select">';
         html += `<option value="none"${swimlaneMode === 'none' ? ' selected' : ''}>None</option>`;
+        html += `<option value="parent"${swimlaneMode === 'parent' ? ' selected' : ''}>Parent Issue</option>`;
         html += `<option value="label"${swimlaneMode === 'label' ? ' selected' : ''}>Label</option>`;
         html += `<option value="assignee"${swimlaneMode === 'assignee' ? ' selected' : ''}>Assignee</option>`;
         (swimlaneFields || []).forEach(f => {
@@ -150,8 +167,7 @@
     }
 
     function renderSwimlanedBoard(items, statusOptions) {
-        // Group items into swimlane buckets
-        const lanes = new Map(); // laneKey → { label, items[] }
+        const lanes = new Map();
         const noLaneItems = [];
 
         items.forEach(item => {
@@ -161,7 +177,14 @@
             } else {
                 laneKeys.forEach(key => {
                     if (!lanes.has(key.id)) {
-                        lanes.set(key.id, { label: key.label, color: key.color, items: [] });
+                        lanes.set(key.id, {
+                            label: key.label,
+                            color: key.color,
+                            number: key.number || null,
+                            subTotal: key.subTotal || 0,
+                            subCompleted: key.subCompleted || 0,
+                            items: [],
+                        });
                     }
                     lanes.get(key.id).items.push(item);
                 });
@@ -170,7 +193,7 @@
 
         let html = '<div class="board-swimlaned">';
 
-        // Render header row (status columns)
+        // Header row
         html += '<div class="swimlane-header">';
         html += '<div class="swimlane-label-cell"></div>';
         statusOptions.forEach(opt => {
@@ -178,51 +201,74 @@
         });
         html += '</div>';
 
-        // Render each swimlane
-        for (const [, lane] of lanes) {
-            html += renderSwimlaneRow(lane.label, lane.color, lane.items, statusOptions);
+        for (const [laneId, lane] of lanes) {
+            html += renderSwimlaneRow(laneId, lane, statusOptions);
         }
         if (noLaneItems.length > 0) {
             const noLabel = swimlaneMode === 'label' ? 'No Label'
                 : swimlaneMode === 'assignee' ? 'Unassigned'
+                : swimlaneMode === 'parent' ? 'No Parent'
                 : 'None';
-            html += renderSwimlaneRow(noLabel, null, noLaneItems, statusOptions);
+            html += renderSwimlaneRow('__no_lane__', {
+                label: noLabel, color: null, number: null,
+                subTotal: 0, subCompleted: 0, items: noLaneItems
+            }, statusOptions);
         }
 
         html += '</div>';
         return html;
     }
 
-    function renderSwimlaneRow(label, color, items, statusOptions) {
+    function renderSwimlaneRow(laneId, lane, statusOptions) {
+        const isCollapsed = collapsedLanes.has(laneId);
         const grouped = {};
         statusOptions.forEach(opt => { grouped[opt.id] = []; });
-        items.forEach(item => {
+        lane.items.forEach(item => {
             const statusFv = getStatusFieldValue(item);
             if (statusFv && grouped[statusFv.optionId]) {
                 grouped[statusFv.optionId].push(item);
             }
         });
 
-        let html = '<div class="swimlane-row">';
-        html += '<div class="swimlane-label-cell">';
-        if (color) {
-            html += `<span class="swimlane-badge" style="background:#${color};color:${getContrastColor(color)}">${escapeHtml(label)}</span>`;
+        let html = `<div class="swimlane-row${isCollapsed ? ' collapsed' : ''}">`;
+
+        // Lane header with toggle
+        html += `<div class="swimlane-label-cell" data-action="toggle-lane" data-lane-id="${escapeHtml(laneId)}">`;
+        html += `<span class="lane-toggle">${isCollapsed ? '▶' : '▼'}</span> `;
+        if (lane.color) {
+            html += `<span class="swimlane-badge" style="background:#${lane.color};color:${getContrastColor(lane.color)}">${escapeHtml(lane.label)}</span>`;
         } else {
-            html += `<span class="swimlane-badge muted">${escapeHtml(label)}</span>`;
+            html += `<span class="swimlane-badge muted">${escapeHtml(lane.label)}</span>`;
+        }
+        if (lane.number) {
+            html += `<span class="lane-number">#${lane.number}</span>`;
+        }
+        html += `<span class="lane-count">${lane.items.length}</span>`;
+        if (lane.subTotal > 0) {
+            const pct = lane.subTotal > 0 ? Math.round((lane.subCompleted / lane.subTotal) * 100) : 0;
+            html += `<div class="lane-progress"><div class="lane-progress-bar" style="width:${pct}%"></div></div>`;
+            html += `<span class="lane-progress-text">${lane.subCompleted}/${lane.subTotal}</span>`;
         }
         html += '</div>';
 
-        statusOptions.forEach(opt => {
-            const colItems = grouped[opt.id] || [];
-            html += '<div class="swimlane-cell">';
-            html += `<div class="column-body" data-status-id="${escapeHtml(opt.id)}">`;
-            if (colItems.length === 0) {
-                html += '<div class="empty-cell"></div>';
-            } else {
-                colItems.forEach(item => { html += renderCard(item); });
-            }
-            html += '</div></div>';
-        });
+        if (!isCollapsed) {
+            statusOptions.forEach(opt => {
+                const colItems = grouped[opt.id] || [];
+                html += '<div class="swimlane-cell">';
+                html += `<div class="column-body" data-status-id="${escapeHtml(opt.id)}">`;
+                if (colItems.length === 0) {
+                    html += '<div class="empty-cell"></div>';
+                } else {
+                    colItems.forEach(item => { html += renderCard(item); });
+                }
+                html += '</div></div>';
+            });
+        } else {
+            // Collapsed: empty cells
+            statusOptions.forEach(() => {
+                html += '<div class="swimlane-cell collapsed-cell"></div>';
+            });
+        }
 
         html += '</div>';
         return html;
@@ -232,6 +278,28 @@
         const content = item.content;
         if (!content) return [];
 
+        if (swimlaneMode === 'parent') {
+            // Group by parent issue
+            if (content.__typename === 'Issue' && content.parent) {
+                // Find the parent item in the current data to get its title
+                const parentItem = (currentData.items || []).find(i =>
+                    i.content && i.content.id === content.parent.id
+                );
+                if (parentItem && parentItem.content) {
+                    const pc = parentItem.content;
+                    return [{
+                        id: pc.id,
+                        label: pc.title,
+                        color: null,
+                        number: pc.number || null,
+                        subTotal: pc.subIssuesSummary?.total || 0,
+                        subCompleted: pc.subIssuesSummary?.completed || 0,
+                    }];
+                }
+                return [{ id: content.parent.id, label: 'Parent', color: null }];
+            }
+            return [];
+        }
         if (swimlaneMode === 'label') {
             const labels = content.labels?.nodes || [];
             return labels.map(l => ({ id: l.name, label: l.name, color: l.color }));

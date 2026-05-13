@@ -119,6 +119,7 @@ export class BoardPanel {
                 break;
             }
             case 'refresh':
+                await this.model.loadProjectDetail(this.projectId);
                 await this.model.loadProjectItems(this.projectId);
                 break;
             case 'ready':
