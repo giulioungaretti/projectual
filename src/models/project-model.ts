@@ -193,6 +193,10 @@ export class ProjectModel {
         await this.client.query(mutations.UPDATE_ISSUE, { id: issueId, title, body });
     }
 
+    async updateDraftIssue(draftIssueId: string, title?: string, body?: string): Promise<void> {
+        await this.client.query(mutations.UPDATE_DRAFT_ISSUE, { draftIssueId, title, body });
+    }
+
     async addLabels(issueId: string, labelIds: string[]): Promise<void> {
         await this.client.query(mutations.ADD_LABELS, {
             labelableId: issueId, labelIds,

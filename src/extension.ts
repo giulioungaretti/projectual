@@ -24,7 +24,9 @@ export function activate(context: vscode.ExtensionContext): void {
     // Register issue document provider (opens issues as markdown)
     const issueDocProvider = new IssueDocumentProvider(model);
     context.subscriptions.push(
-        vscode.workspace.registerTextDocumentContentProvider(ISSUE_SCHEME, issueDocProvider),
+        vscode.workspace.registerFileSystemProvider(ISSUE_SCHEME, issueDocProvider, {
+            isReadonly: false,
+        }),
         issueDocProvider,
     );
 

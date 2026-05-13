@@ -73,7 +73,7 @@ export const GET_PROJECT_ITEMS = `
               }
             }
             content {
-              ... on DraftIssue { __typename title body }
+              ... on DraftIssue { __typename id title body }
               ... on Issue {
                 __typename id title number state url body createdAt updatedAt
                 assignees(first: 10) { nodes { login avatarUrl } }

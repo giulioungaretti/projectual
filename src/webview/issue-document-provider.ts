@@ -3,15 +3,22 @@ import { ProjectModel } from '../models/project-model';
 import { ProjectItem, IssueContent, DraftIssueContent, PullRequestContent, FieldValue } from '../api/types';
 
 export const ISSUE_SCHEME = 'gh-issue';
+const NO_DESCRIPTION_PLACEHOLDER = '*No description provided.*';
 
 interface IssueDocumentInfo {
     projectId: string;
     item: ProjectItem;
+    uri: vscode.Uri;
+    content: Uint8Array;
+    mtime: number;
+    size: number;
 }
 
-export class IssueDocumentProvider implements vscode.TextDocumentContentProvider {
-    private _onDidChange = new vscode.EventEmitter<vscode.Uri>();
-    readonly onDidChange = this._onDidChange.event;
+export class IssueDocumentProvider implements vscode.FileSystemProvider {
+    private readonly encoder = new TextEncoder();
+    private readonly decoder = new TextDecoder();
+    private readonly _onDidChangeFile = new vscode.EventEmitter<vscode.FileChangeEvent[]>();
+    readonly onDidChangeFile = this._onDidChangeFile.event;
 
     private documents = new Map<string, IssueDocumentInfo>();
     private disposables: vscode.Disposable[] = [];
@@ -19,11 +26,22 @@ export class IssueDocumentProvider implements vscode.TextDocumentContentProvider
     constructor(private model: ProjectModel) {
         this.disposables.push(
             model.onDidChange(() => {
-                for (const [key, info] of this.documents) {
+                for (const info of this.documents.values()) {
                     const updated = model.getProjectItems(info.projectId).find(i => i.id === info.item.id);
                     if (updated) {
+                        const isDirty = vscode.workspace.textDocuments.some(
+                            doc => doc.uri.toString() === info.uri.toString() && doc.isDirty
+                        );
                         info.item = updated;
-                        this._onDidChange.fire(this.buildUri(info.projectId, updated));
+                        if (isDirty) {
+                            continue;
+                        }
+
+                        const rendered = this.renderMarkdown({ ...info, item: updated });
+                        if (rendered !== this.decoder.decode(info.content)) {
+                            this.updateStoredContent(info, rendered);
+                            this._onDidChangeFile.fire([{ type: vscode.FileChangeType.Changed, uri: info.uri }]);
+                        }
                     }
                 }
             })
@@ -32,7 +50,31 @@ export class IssueDocumentProvider implements vscode.TextDocumentContentProvider
 
     registerDocument(projectId: string, item: ProjectItem): vscode.Uri {
         const uri = this.buildUri(projectId, item);
-        this.documents.set(uri.toString(), { projectId, item });
+        const key = uri.toString();
+        const existing = this.documents.get(key);
+        if (existing) {
+            existing.item = item;
+            existing.projectId = projectId;
+            return uri;
+        }
+
+        const markdown = this.renderMarkdown({
+            projectId,
+            item,
+            uri,
+            content: new Uint8Array(),
+            mtime: 0,
+            size: 0,
+        });
+        const contentBytes = this.encoder.encode(markdown);
+        this.documents.set(key, {
+            projectId,
+            item,
+            uri,
+            content: contentBytes,
+            mtime: Date.now(),
+            size: contentBytes.byteLength,
+        });
         return uri;
     }
 
@@ -40,12 +82,70 @@ export class IssueDocumentProvider implements vscode.TextDocumentContentProvider
         return this.documents.get(uri.toString());
     }
 
-    provideTextDocumentContent(uri: vscode.Uri): string {
+    watch(): vscode.Disposable {
+        return new vscode.Disposable(() => undefined);
+    }
+
+    stat(uri: vscode.Uri): vscode.FileStat {
+        const info = this.requireDocument(uri);
+        return {
+            type: vscode.FileType.File,
+            ctime: info.mtime,
+            mtime: info.mtime,
+            size: info.size,
+        };
+    }
+
+    readDirectory(): [string, vscode.FileType][] {
+        return [];
+    }
+
+    createDirectory(): void {
+        throw vscode.FileSystemError.NoPermissions('Directories are not supported.');
+    }
+
+    readFile(uri: vscode.Uri): Uint8Array {
+        return this.requireDocument(uri).content;
+    }
+
+    async writeFile(uri: vscode.Uri, content: Uint8Array, options: { create: boolean; overwrite: boolean }): Promise<void> {
         const info = this.documents.get(uri.toString());
         if (!info) {
-            return '# Issue not found';
+            if (!options.create) {
+                throw vscode.FileSystemError.FileNotFound(uri);
+            }
+            throw vscode.FileSystemError.NoPermissions('New issue documents cannot be created directly.');
         }
-        return this.renderMarkdown(info);
+
+        const text = this.decoder.decode(content);
+        const parsed = this.parseEditableContent(info.item, text);
+
+        if (info.item.content?.__typename === 'Issue') {
+            await this.model.updateIssue(info.item.content.id, parsed.title, parsed.body || undefined);
+        } else if (info.item.content?.__typename === 'DraftIssue') {
+            await this.model.updateDraftIssue(info.item.content.id, parsed.title, parsed.body || undefined);
+        } else {
+            throw vscode.FileSystemError.NoPermissions('Only issues and draft issues can be saved.');
+        }
+
+        await this.model.loadProjectItems(info.projectId);
+        const updated = this.model.getProjectItems(info.projectId).find(item => item.id === info.item.id);
+        if (updated) {
+            info.item = updated;
+            this.updateStoredContent(info, this.renderMarkdown(info));
+        } else {
+            this.updateStoredContent(info, text);
+        }
+
+        this._onDidChangeFile.fire([{ type: vscode.FileChangeType.Changed, uri }]);
+    }
+
+    delete(): void {
+        throw vscode.FileSystemError.NoPermissions('Issue documents cannot be deleted.');
+    }
+
+    rename(): void {
+        throw vscode.FileSystemError.NoPermissions('Issue documents cannot be renamed.');
     }
 
     private buildUri(projectId: string, item: ProjectItem): vscode.Uri {
@@ -68,6 +168,21 @@ export class IssueDocumentProvider implements vscode.TextDocumentContentProvider
             path: `/${name.replace(/\//g, '-')}.md`,
             query: `projectId=${encodeURIComponent(projectId)}&itemId=${encodeURIComponent(item.id)}`,
         });
+    }
+
+    private requireDocument(uri: vscode.Uri): IssueDocumentInfo {
+        const info = this.documents.get(uri.toString());
+        if (!info) {
+            throw vscode.FileSystemError.FileNotFound(uri);
+        }
+        return info;
+    }
+
+    private updateStoredContent(info: IssueDocumentInfo, markdown: string): void {
+        const bytes = this.encoder.encode(markdown);
+        info.content = bytes;
+        info.mtime = Date.now();
+        info.size = bytes.byteLength;
     }
 
     private renderMarkdown(info: IssueDocumentInfo): string {
@@ -118,7 +233,7 @@ export class IssueDocumentProvider implements vscode.TextDocumentContentProvider
 
             lines.push('---');
             lines.push('');
-            lines.push(issue.body || '*No description provided.*');
+            lines.push(issue.body || NO_DESCRIPTION_PLACEHOLDER);
         } else if (content.__typename === 'DraftIssue') {
             const draft = content as DraftIssueContent;
             lines.push(`# ${draft.title}`);
@@ -137,7 +252,7 @@ export class IssueDocumentProvider implements vscode.TextDocumentContentProvider
 
             lines.push('');
             lines.push('---');
-            lines.push('');
+            lines.push(draft.body || NO_DESCRIPTION_PLACEHOLDER);
             lines.push(draft.body || '*No description provided.*');
         } else if (content.__typename === 'PullRequest') {
             const pr = content as PullRequestContent;
@@ -164,6 +279,29 @@ export class IssueDocumentProvider implements vscode.TextDocumentContentProvider
         return lines.join('\n');
     }
 
+    private parseEditableContent(item: ProjectItem, text: string): { title: string; body: string } {
+        const lines = text.replace(/\r\n/g, '\n').split('\n');
+        const existingTitle = item.content?.title ?? 'Issue';
+        const titleLine = lines.find(line => line.startsWith('# '));
+        const title = titleLine ? titleLine.slice(2).trim() || existingTitle : existingTitle;
+
+        const separatorIndex = lines.findIndex(line => line.trim() === '---');
+        let bodyLines = separatorIndex >= 0 ? lines.slice(separatorIndex + 1) : [];
+        while (bodyLines.length > 0 && bodyLines[0].trim() === '') {
+            bodyLines = bodyLines.slice(1);
+        }
+        while (bodyLines.length > 0 && bodyLines[bodyLines.length - 1].trim() === '') {
+            bodyLines = bodyLines.slice(0, -1);
+        }
+
+        let body = bodyLines.join('\n');
+        if (body === NO_DESCRIPTION_PLACEHOLDER) {
+            body = '';
+        }
+
+        return { title, body };
+    }
+
     private formatFieldValue(fv: FieldValue): string {
         switch (fv.__typename) {
             case 'ProjectV2ItemFieldTextValue':
@@ -182,7 +320,7 @@ export class IssueDocumentProvider implements vscode.TextDocumentContentProvider
     }
 
     dispose(): void {
-        this._onDidChange.dispose();
+        this._onDidChangeFile.dispose();
         this.disposables.forEach(d => d.dispose());
     }
 }

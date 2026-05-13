@@ -151,6 +151,7 @@ export interface PullRequestContent {
 
 export interface DraftIssueContent {
     __typename: 'DraftIssue';
+    id: string;
     title: string;
     body: string;
 }

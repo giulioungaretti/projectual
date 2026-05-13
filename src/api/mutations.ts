@@ -96,3 +96,11 @@ export const UPDATE_ISSUE = `
     }
   }
 `;
+
+export const UPDATE_DRAFT_ISSUE = `
+  mutation($draftIssueId: ID!, $title: String, $body: String) {
+    updateProjectV2DraftIssue(input: { draftIssueId: $draftIssueId, title: $title, body: $body }) {
+      draftIssue { id title body }
+    }
+  }
+`;
