@@ -81,7 +81,7 @@ export const GET_PROJECT_ITEMS = `
                 milestone { title dueOn }
                 repository { nameWithOwner name owner { login } }
                 parent { id }
-                subIssues(first: 50) { nodes { id } }
+                subIssues(first: 50) { nodes { id title number state url } }
                 subIssuesSummary { total completed percentCompleted }
               }
               ... on PullRequest {

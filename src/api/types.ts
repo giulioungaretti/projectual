@@ -134,7 +134,7 @@ export interface IssueContent {
     milestone: { title: string; dueOn: string | null } | null;
     repository: { nameWithOwner: string; name: string; owner: { login: string } };
     parent: { id: string } | null;
-    subIssues: { nodes: { id: string }[] };
+    subIssues: { nodes: SubIssueRef[] };
     subIssuesSummary: { total: number; completed: number; percentCompleted: number };
 }
 
@@ -168,6 +168,14 @@ export interface ProjectItem {
 }
 
 // --- Shared types ---
+
+export interface SubIssueRef {
+    id: string;
+    title: string;
+    number: number;
+    state: 'OPEN' | 'CLOSED';
+    url: string;
+}
 
 export interface Assignee {
     login: string;

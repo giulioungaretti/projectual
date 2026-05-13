@@ -203,6 +203,15 @@ export class IssueDocumentProvider implements vscode.FileSystemProvider {
             this.addFieldValuesToFrontmatter(fm, item);
             body = issue.body || NO_DESCRIPTION_PLACEHOLDER;
 
+            // Append sub-issues section if present
+            if (issue.subIssues?.nodes?.length) {
+                const subList = issue.subIssues.nodes.map(sub => {
+                    const check = sub.state === 'CLOSED' ? 'x' : ' ';
+                    return `- [${check}] [#${sub.number} ${sub.title}](${sub.url})`;
+                }).join('\n');
+                body += `\n\n## Sub-issues\n\n${subList}`;
+            }
+
         } else if (content.__typename === 'DraftIssue') {
             const draft = content as DraftIssueContent;
             fm.title = draft.title;
