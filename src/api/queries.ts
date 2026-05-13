@@ -19,13 +19,13 @@ export const GET_PROJECT_DETAIL = `
         id title number url closed shortDescription createdAt updatedAt
         fields(first: 30) {
           nodes {
-            ... on ProjectV2Field { id name dataType }
+            ... on ProjectV2Field { __typename id name dataType }
             ... on ProjectV2SingleSelectField {
-              id name
+              __typename id name
               options { id name color }
             }
             ... on ProjectV2IterationField {
-              id name
+              __typename id name
               configuration {
                 iterations { id title startDate duration }
               }
