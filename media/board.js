@@ -215,7 +215,21 @@
                 if (val === 'draft') return content?.__typename === 'DraftIssue';
                 if (val === 'pr') return content?.__typename === 'PullRequest';
                 if (val === 'issue') return content?.__typename === 'Issue';
-                if (val === 'blocked') return (content?.blockedBy?.totalCount || 0) > 0;
+                // is:blocked checks the Status field for "Blocked" (matches GitHub Projects behavior)
+                if (val === 'blocked') {
+                    const statusFv = getStatusFieldValue(item);
+                    return statusFv?.name?.toLowerCase() === 'blocked';
+                }
+                // is:blocking checks the Status field for "Blocking"
+                if (val === 'blocking') {
+                    const statusFv = getStatusFieldValue(item);
+                    return statusFv?.name?.toLowerCase() === 'blocking';
+                }
+                return false;
+            }
+            // has:blockers / has:blocking checks the actual dependency relationships
+            case 'has': {
+                if (val === 'blockers') return (content?.blockedBy?.totalCount || 0) > 0;
                 if (val === 'blocking') return (content?.blocking?.totalCount || 0) > 0;
                 return false;
             }
