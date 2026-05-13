@@ -52,7 +52,12 @@ function createItemTreeItem(element: Extract<TreeElement, { type: 'item' }>): vs
     }
 
     const title = content.title;
-    const treeItem = new vscode.TreeItem(title, vscode.TreeItemCollapsibleState.None);
+    const hasSubIssues = content.__typename === 'Issue' &&
+        ((content as IssueContent).subIssues?.nodes?.length ?? 0) > 0;
+    const treeItem = new vscode.TreeItem(
+        title,
+        hasSubIssues ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None
+    );
     treeItem.contextValue = 'projectItem';
 
     if (content.__typename === 'Issue') {
@@ -63,17 +68,25 @@ function createItemTreeItem(element: Extract<TreeElement, { type: 'item' }>): vs
                 ? new vscode.ThemeColor('charts.green')
                 : new vscode.ThemeColor('charts.purple')
         );
-        treeItem.description = `${issue.repository.nameWithOwner}#${issue.number}`;
-
         const assignees = issue.assignees.nodes.map(a => a.login).join(', ');
         const labels = issue.labels.nodes.map(l => l.name).join(', ');
+        const subSummary = issue.subIssuesSummary;
         const parts = [
             `**${issue.title}** #${issue.number}`,
             `Repo: ${issue.repository.nameWithOwner}`,
             assignees ? `Assignees: ${assignees}` : null,
             labels ? `Labels: ${labels}` : null,
+            subSummary && subSummary.total > 0
+                ? `Sub-issues: ${subSummary.completed}/${subSummary.total} (${subSummary.percentCompleted}%)`
+                : null,
         ].filter(Boolean);
         treeItem.tooltip = new vscode.MarkdownString(parts.join('\n\n'));
+
+        if (hasSubIssues && subSummary && subSummary.total > 0) {
+            treeItem.description = `${issue.repository.nameWithOwner}#${issue.number} [${subSummary.completed}/${subSummary.total}]`;
+        } else {
+            treeItem.description = `${issue.repository.nameWithOwner}#${issue.number}`;
+        }
 
         treeItem.command = {
             command: 'ghProjects.openItem',

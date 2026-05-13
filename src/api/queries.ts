@@ -80,6 +80,9 @@ export const GET_PROJECT_ITEMS = `
                 labels(first: 10) { nodes { name color } }
                 milestone { title dueOn }
                 repository { nameWithOwner name owner { login } }
+                parent { id }
+                subIssues(first: 50) { nodes { id } }
+                subIssuesSummary { total completed percentCompleted }
               }
               ... on PullRequest {
                 __typename id title number state url

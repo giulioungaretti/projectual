@@ -3,7 +3,7 @@ import { TreeElement, ProjectNode, StatusGroupNode, ItemNode, MessageNode } from
 import { createTreeItem } from './tree-items';
 import { ProjectModel } from '../models/project-model';
 import { GitHubAuth } from '../auth/github-auth';
-import { ProjectItem, SingleSelectFieldValue } from '../api/types';
+import { ProjectItem, IssueContent, SingleSelectFieldValue } from '../api/types';
 
 export class ProjectTreeProvider implements vscode.TreeDataProvider<TreeElement> {
     private _onDidChangeTreeData = new vscode.EventEmitter<TreeElement | undefined | void>();
@@ -36,6 +36,8 @@ export class ProjectTreeProvider implements vscode.TreeDataProvider<TreeElement>
                 return this.getProjectChildren(element);
             case 'statusGroup':
                 return this.getStatusGroupChildren(element);
+            case 'item':
+                return this.getItemChildren(element);
             default:
                 return [];
         }
@@ -84,10 +86,22 @@ export class ProjectTreeProvider implements vscode.TreeDataProvider<TreeElement>
             items = await this.model.loadProjectItems(projectId);
         }
 
+        // Build a set of all issue IDs that are sub-issues (have a parent in this project)
+        const childIssueIds = this.model.getChildIssueIds(projectId);
+
+        // Filter to only top-level items (not sub-issues of another item in the project)
+        const topLevelItems = items.filter(item => {
+            if (item.type === 'REDACTED') { return false; }
+            if (item.content?.__typename === 'Issue') {
+                const issue = item.content as IssueContent;
+                return !childIssueIds.has(issue.id);
+            }
+            return true;
+        });
+
         const statusField = this.model.getStatusField(projectId);
         if (!statusField) {
-            // No Status field — show flat list
-            return items.map((item): ItemNode => ({
+            return topLevelItems.map((item): ItemNode => ({
                 type: 'item', projectId, item,
             }));
         }
@@ -97,8 +111,7 @@ export class ProjectTreeProvider implements vscode.TreeDataProvider<TreeElement>
         const itemsByStatus = new Map<string, ProjectItem[]>();
         const noStatusItems: ProjectItem[] = [];
 
-        for (const item of items) {
-            if (item.type === 'REDACTED') { continue; }
+        for (const item of topLevelItems) {
             const status = this.model.getItemStatus(item);
             if (status) {
                 const bucket = itemsByStatus.get(status.optionId) ?? [];
@@ -136,5 +149,33 @@ export class ProjectTreeProvider implements vscode.TreeDataProvider<TreeElement>
             projectId: element.projectId,
             item,
         }));
+    }
+
+    private getItemChildren(element: ItemNode): TreeElement[] {
+        const content = element.item.content;
+        if (!content || content.__typename !== 'Issue') { return []; }
+
+        const issue = content as IssueContent;
+        const subIssueIds = issue.subIssues?.nodes?.map(n => n.id) ?? [];
+        if (subIssueIds.length === 0) { return []; }
+
+        // Find the project items whose content matches these sub-issue IDs
+        const allItems = this.model.getProjectItems(element.projectId);
+        const subItems: ItemNode[] = [];
+
+        for (const subId of subIssueIds) {
+            const match = allItems.find(
+                i => i.content && 'id' in i.content && i.content.id === subId
+            );
+            if (match) {
+                subItems.push({
+                    type: 'item',
+                    projectId: element.projectId,
+                    item: match,
+                });
+            }
+        }
+
+        return subItems;
     }
 }

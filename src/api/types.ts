@@ -133,6 +133,9 @@ export interface IssueContent {
     labels: { nodes: Label[] };
     milestone: { title: string; dueOn: string | null } | null;
     repository: { nameWithOwner: string; name: string; owner: { login: string } };
+    parent: { id: string } | null;
+    subIssues: { nodes: { id: string }[] };
+    subIssuesSummary: { total: number; completed: number; percentCompleted: number };
 }
 
 export interface PullRequestContent {

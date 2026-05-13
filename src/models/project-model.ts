@@ -3,7 +3,7 @@ import { GraphQLClient } from '../api/graphql-client';
 import {
     ProjectV2, ProjectDetail, ProjectItem, ProjectField,
     ProjectSingleSelectField, FieldValue, SingleSelectFieldValue,
-    ProjectItemsPage, PageInfo,
+    IssueContent, ProjectItemsPage, PageInfo,
 } from '../api/types';
 import * as queries from '../api/queries';
 import * as mutations from '../api/mutations';
@@ -50,6 +50,28 @@ export class ProjectModel {
     getItemTitle(item: ProjectItem): string {
         if (!item.content) { return '(Redacted)'; }
         return item.content.title;
+    }
+
+    /** Returns the set of issue IDs that are sub-issues of another item in this project. */
+    getChildIssueIds(projectId: string): Set<string> {
+        const items = this._projectItems.get(projectId) ?? [];
+        const childIds = new Set<string>();
+        for (const item of items) {
+            if (item.content?.__typename === 'Issue') {
+                const issue = item.content as IssueContent;
+                for (const sub of issue.subIssues?.nodes ?? []) {
+                    childIds.add(sub.id);
+                }
+            }
+        }
+        return childIds;
+    }
+
+    /** Returns true if this item has sub-issues in the project. */
+    hasSubIssues(item: ProjectItem): boolean {
+        if (item.content?.__typename !== 'Issue') { return false; }
+        const issue = item.content as IssueContent;
+        return (issue.subIssues?.nodes?.length ?? 0) > 0;
     }
 
     // --- Data fetching ---
