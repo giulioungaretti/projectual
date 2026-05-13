@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { ProjectModel } from '../models/project-model';
-import { IssuePanel } from '../webview/issue-panel';
+import { IssueDocumentProvider } from '../webview/issue-document-provider';
 import { ProjectItem, ProjectV2, IssueContent } from '../api/types';
 import * as queries from '../api/queries';
 import { GraphQLClient } from '../api/graphql-client';
@@ -9,6 +9,7 @@ export function registerIssueCommands(
     context: vscode.ExtensionContext,
     model: ProjectModel,
     client: GraphQLClient,
+    issueDocProvider: IssueDocumentProvider,
 ): void {
     context.subscriptions.push(
         vscode.commands.registerCommand('ghProjects.openItem', async (projectId: string, item: ProjectItem | string) => {
@@ -26,7 +27,14 @@ export function registerIssueCommands(
                 return;
             }
 
-            IssuePanel.createOrShow(context.extensionUri, model, projectId, resolvedItem);
+            const uri = issueDocProvider.registerDocument(projectId, resolvedItem);
+            const doc = await vscode.workspace.openTextDocument(uri);
+            await vscode.window.showTextDocument(doc, {
+                viewColumn: vscode.ViewColumn.Two,
+                preview: false,
+            });
+            // Show markdown preview side by side
+            await vscode.commands.executeCommand('markdown.showPreviewToSide', uri);
         }),
 
         vscode.commands.registerCommand('ghProjects.createIssue', async () => {
@@ -156,7 +164,13 @@ export function registerIssueCommands(
             const itemNode = node as { type: string; projectId: string; item: ProjectItem };
             if (itemNode.type !== 'item') { return; }
 
-            IssuePanel.createOrShow(context.extensionUri, model, itemNode.projectId, itemNode.item);
+            const uri = issueDocProvider.registerDocument(itemNode.projectId, itemNode.item);
+            const doc = await vscode.workspace.openTextDocument(uri);
+            await vscode.window.showTextDocument(doc, {
+                viewColumn: vscode.ViewColumn.Two,
+                preview: false,
+            });
+            await vscode.commands.executeCommand('markdown.showPreviewToSide', uri);
         }),
     );
 }

@@ -6,6 +6,7 @@ import { ProjectTreeProvider } from './tree/project-tree-provider';
 import { registerProjectCommands } from './commands/project-commands';
 import { registerIssueCommands } from './commands/issue-commands';
 import { registerFieldCommands } from './commands/field-commands';
+import { IssueDocumentProvider, ISSUE_SCHEME } from './webview/issue-document-provider';
 
 export function activate(context: vscode.ExtensionContext): void {
     const auth = new GitHubAuth();
@@ -20,9 +21,16 @@ export function activate(context: vscode.ExtensionContext): void {
     });
     context.subscriptions.push(treeView);
 
+    // Register issue document provider (opens issues as markdown)
+    const issueDocProvider = new IssueDocumentProvider(model);
+    context.subscriptions.push(
+        vscode.workspace.registerTextDocumentContentProvider(ISSUE_SCHEME, issueDocProvider),
+        issueDocProvider,
+    );
+
     // Register all commands
     registerProjectCommands(context, model, auth, treeProvider);
-    registerIssueCommands(context, model, client);
+    registerIssueCommands(context, model, client, issueDocProvider);
     registerFieldCommands(context, model, client);
 
     // Status bar
