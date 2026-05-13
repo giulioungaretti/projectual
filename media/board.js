@@ -2,10 +2,11 @@
     // @ts-ignore
     const vscode = acquireVsCodeApi();
     const root = document.getElementById('board-root');
+    const savedState = vscode.getState() || {};
 
     let currentData = { project: null, items: [], statusField: null, allLabels: [], swimlaneFields: [] };
-    let swimlaneMode = 'none'; // 'none' | 'label' | 'assignee' | field id
-    let activeLabels = new Set(); // selected labels for filtering (empty = show all)
+    let swimlaneMode = savedState.swimlaneMode || 'none'; // 'none' | 'label' | 'assignee' | field id
+    let activeLabels = new Set(savedState.activeLabels || []); // selected labels for filtering (empty = show all)
 
     window.addEventListener('message', event => {
         const msg = event.data;
@@ -35,11 +36,14 @@
                 } else {
                     activeLabels.add(label);
                 }
+                persistState();
                 render();
                 break;
             }
             case 'clear-labels':
                 activeLabels.clear();
+                swimlaneMode = 'none';
+                persistState();
                 render();
                 break;
         }
@@ -50,6 +54,7 @@
         if (!target) return;
         if (target.dataset.action === 'swimlane-select') {
             swimlaneMode = target.value;
+            persistState();
             render();
         }
     });
@@ -113,7 +118,7 @@
                     + `style="--chip-bg:#${l.color};--chip-fg:${getContrastColor(l.color)}">`
                     + `${escapeHtml(l.name)}</span>`;
             });
-            if (activeLabels.size > 0) {
+            if (activeLabels.size > 0 || swimlaneMode !== 'none') {
                 html += '<span class="filter-chip clear-chip" data-action="clear-labels">✕ Clear</span>';
             }
             html += '</div>';
@@ -381,6 +386,13 @@
         const b = parseInt(hexColor.substr(4, 2), 16);
         const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
         return luminance > 0.5 ? '#000000' : '#ffffff';
+    }
+
+    function persistState() {
+        vscode.setState({
+            activeLabels: Array.from(activeLabels),
+            swimlaneMode,
+        });
     }
 
     // Signal to extension that we're ready to receive data
