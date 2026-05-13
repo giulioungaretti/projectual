@@ -102,6 +102,18 @@
         "title": "Edit Issue",
         "category": "GitHub Projects",
         "icon": "$(edit)"
+      },
+      {
+        "command": "ghProjects.focusProject",
+        "title": "Focus Project",
+        "category": "GitHub Projects",
+        "icon": "$(pin)"
+      },
+      {
+        "command": "ghProjects.clearFocus",
+        "title": "Show All Projects",
+        "category": "GitHub Projects",
+        "icon": "$(close)"
       }
     ],
     "menus": {
@@ -109,15 +121,25 @@
         {
           "command": "ghProjects.refresh",
           "when": "view == ghProjects.projectList",
-          "group": "navigation"
+          "group": "navigation@1"
+        },
+        {
+          "command": "ghProjects.clearFocus",
+          "when": "view == ghProjects.projectList && ghProjects.hasFocusedProject",
+          "group": "navigation@2"
         },
         {
           "command": "ghProjects.createDraft",
           "when": "view == ghProjects.projectList",
-          "group": "navigation"
+          "group": "navigation@3"
         }
       ],
       "view/item/context": [
+        {
+          "command": "ghProjects.focusProject",
+          "when": "view == ghProjects.projectList && viewItem == project",
+          "group": "inline@0"
+        },
         {
           "command": "ghProjects.openBoard",
           "when": "view == ghProjects.projectList && viewItem == project",

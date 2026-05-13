@@ -10,6 +10,7 @@ export class ProjectTreeProvider implements vscode.TreeDataProvider<TreeElement>
     readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
     private _loading = false;
+    private _focusedProjectId: string | undefined;
 
     constructor(
         private model: ProjectModel,
@@ -17,6 +18,22 @@ export class ProjectTreeProvider implements vscode.TreeDataProvider<TreeElement>
     ) {
         model.onDidChange(() => this._onDidChangeTreeData.fire());
         auth.onDidChangeAuth(() => this._onDidChangeTreeData.fire());
+    }
+
+    get focusedProjectId(): string | undefined {
+        return this._focusedProjectId;
+    }
+
+    focusProject(projectId: string): void {
+        this._focusedProjectId = projectId;
+        vscode.commands.executeCommand('setContext', 'ghProjects.hasFocusedProject', true);
+        this._onDidChangeTreeData.fire();
+    }
+
+    clearFocus(): void {
+        this._focusedProjectId = undefined;
+        vscode.commands.executeCommand('setContext', 'ghProjects.hasFocusedProject', false);
+        this._onDidChangeTreeData.fire();
     }
 
     refresh(): void {
@@ -68,7 +85,12 @@ export class ProjectTreeProvider implements vscode.TreeDataProvider<TreeElement>
             return [{ type: 'message', label: 'No projects found' }];
         }
 
-        return this.model.projects.map(
+        let projects = this.model.projects;
+        if (this._focusedProjectId) {
+            projects = projects.filter(p => p.id === this._focusedProjectId);
+        }
+
+        return projects.map(
             (project): ProjectNode => ({ type: 'project', project })
         );
     }

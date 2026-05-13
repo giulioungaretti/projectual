@@ -94,5 +94,37 @@ export function registerProjectCommands(
                 vscode.env.openExternal(vscode.Uri.parse(url));
             }
         }),
+
+        vscode.commands.registerCommand('ghProjects.focusProject', async (nodeOrUndef?: unknown) => {
+            let projectId: string | undefined;
+
+            if (typeof nodeOrUndef === 'object' && nodeOrUndef !== null && 'type' in nodeOrUndef) {
+                const node = nodeOrUndef as { type: string; project?: ProjectV2 };
+                if (node.type === 'project' && node.project) {
+                    projectId = node.project.id;
+                }
+            }
+
+            if (!projectId) {
+                // QuickPick fallback
+                if (model.projects.length === 0) { await model.loadProjects(); }
+                const pick = await vscode.window.showQuickPick(
+                    model.projects.map(p => ({
+                        label: p.title,
+                        description: `#${p.number}`,
+                        projectId: p.id,
+                    })),
+                    { placeHolder: 'Select project to focus' }
+                );
+                if (!pick) { return; }
+                projectId = pick.projectId;
+            }
+
+            treeProvider.focusProject(projectId);
+        }),
+
+        vscode.commands.registerCommand('ghProjects.clearFocus', () => {
+            treeProvider.clearFocus();
+        }),
     );
 }
