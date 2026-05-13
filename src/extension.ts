@@ -1,0 +1,58 @@
+import * as vscode from 'vscode';
+import { GitHubAuth } from './auth/github-auth';
+import { GraphQLClient } from './api/graphql-client';
+import { ProjectModel } from './models/project-model';
+import { ProjectTreeProvider } from './tree/project-tree-provider';
+import { registerProjectCommands } from './commands/project-commands';
+import { registerIssueCommands } from './commands/issue-commands';
+import { registerFieldCommands } from './commands/field-commands';
+
+export function activate(context: vscode.ExtensionContext): void {
+    const auth = new GitHubAuth();
+    const client = new GraphQLClient(auth);
+    const model = new ProjectModel(client);
+    const treeProvider = new ProjectTreeProvider(model, auth);
+
+    // Register tree view
+    const treeView = vscode.window.createTreeView('ghProjects.projectList', {
+        treeDataProvider: treeProvider,
+        showCollapseAll: true,
+    });
+    context.subscriptions.push(treeView);
+
+    // Register all commands
+    registerProjectCommands(context, model, auth, treeProvider);
+    registerIssueCommands(context, model, client);
+    registerFieldCommands(context, model, client);
+
+    // Status bar
+    const statusBar = vscode.window.createStatusBarItem(
+        vscode.StatusBarAlignment.Left, 50
+    );
+    statusBar.text = '$(project) GitHub Projects';
+    statusBar.tooltip = 'Open GitHub Projects Board';
+    statusBar.command = 'ghProjects.openBoard';
+    statusBar.show();
+    context.subscriptions.push(statusBar);
+
+    // Auto-load projects on activation if authenticated
+    auth.getToken().then(token => {
+        if (token) {
+            model.loadProjects().catch(() => {
+                // Silent failure on startup — user can manually refresh
+            });
+        }
+    });
+
+    // Cleanup
+    context.subscriptions.push({
+        dispose: () => {
+            auth.dispose();
+            model.dispose();
+        },
+    });
+}
+
+export function deactivate(): void {
+    // Cleanup handled by disposables
+}

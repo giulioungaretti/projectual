@@ -1,0 +1,175 @@
+{
+  "name": "gh-projects-vscode",
+  "displayName": "GitHub Projects v2",
+  "description": "View and manage GitHub Projects v2 boards, issues, and fields directly in VS Code",
+  "version": "0.1.0",
+  "publisher": "giulioungaretti",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "github",
+    "projects",
+    "issues",
+    "kanban",
+    "dashboard"
+  ],
+  "main": "./out/extension.js",
+  "extensionDependencies": [
+    "vscode.github-authentication"
+  ],
+  "activationEvents": [],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "ghProjects",
+          "title": "GitHub Projects",
+          "icon": "media/icons/project.svg"
+        }
+      ]
+    },
+    "views": {
+      "ghProjects": [
+        {
+          "id": "ghProjects.projectList",
+          "name": "Projects"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "ghProjects.signIn",
+        "title": "Sign In to GitHub",
+        "category": "GitHub Projects"
+      },
+      {
+        "command": "ghProjects.refresh",
+        "title": "Refresh",
+        "category": "GitHub Projects",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "ghProjects.openBoard",
+        "title": "Open Project Board",
+        "category": "GitHub Projects",
+        "icon": "$(project)"
+      },
+      {
+        "command": "ghProjects.openItem",
+        "title": "Open Issue Detail",
+        "category": "GitHub Projects"
+      },
+      {
+        "command": "ghProjects.openInGitHub",
+        "title": "Open in GitHub",
+        "category": "GitHub Projects",
+        "icon": "$(link-external)"
+      },
+      {
+        "command": "ghProjects.changeStatus",
+        "title": "Change Status",
+        "category": "GitHub Projects",
+        "icon": "$(symbol-event)"
+      },
+      {
+        "command": "ghProjects.changeAssignees",
+        "title": "Change Assignees",
+        "category": "GitHub Projects"
+      },
+      {
+        "command": "ghProjects.changeLabels",
+        "title": "Change Labels",
+        "category": "GitHub Projects"
+      },
+      {
+        "command": "ghProjects.createIssue",
+        "title": "Create Issue",
+        "category": "GitHub Projects",
+        "icon": "$(add)"
+      },
+      {
+        "command": "ghProjects.createDraft",
+        "title": "Create Draft Issue",
+        "category": "GitHub Projects"
+      },
+      {
+        "command": "ghProjects.editIssue",
+        "title": "Edit Issue",
+        "category": "GitHub Projects",
+        "icon": "$(edit)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "ghProjects.refresh",
+          "when": "view == ghProjects.projectList",
+          "group": "navigation"
+        },
+        {
+          "command": "ghProjects.createDraft",
+          "when": "view == ghProjects.projectList",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "ghProjects.openBoard",
+          "when": "view == ghProjects.projectList && viewItem == project",
+          "group": "inline@1"
+        },
+        {
+          "command": "ghProjects.changeStatus",
+          "when": "view == ghProjects.projectList && viewItem == projectItem",
+          "group": "inline@1"
+        },
+        {
+          "command": "ghProjects.openInGitHub",
+          "when": "view == ghProjects.projectList && viewItem =~ /project|projectItem/",
+          "group": "inline@2"
+        },
+        {
+          "command": "ghProjects.editIssue",
+          "when": "view == ghProjects.projectList && viewItem == projectItem",
+          "group": "1_edit@1"
+        },
+        {
+          "command": "ghProjects.changeAssignees",
+          "when": "view == ghProjects.projectList && viewItem == projectItem",
+          "group": "1_edit@2"
+        },
+        {
+          "command": "ghProjects.changeLabels",
+          "when": "view == ghProjects.projectList && viewItem == projectItem",
+          "group": "1_edit@3"
+        },
+        {
+          "command": "ghProjects.createIssue",
+          "when": "view == ghProjects.projectList && viewItem == project",
+          "group": "2_create@1"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "compile": "esbuild src/extension.ts --bundle --outfile=out/extension.js --external:vscode --format=cjs --platform=node --sourcemap",
+    "watch": "npm run compile -- --watch",
+    "build": "npm run compile -- --minify",
+    "package": "npx @vscode/vsce package",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@octokit/graphql": "^9.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "^25.7.0",
+    "@types/vscode": "^1.118.0",
+    "esbuild": "^0.28.0",
+    "typescript": "^6.0.3"
+  }
+}
