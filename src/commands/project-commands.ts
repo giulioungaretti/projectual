@@ -74,7 +74,7 @@ export function registerProjectCommands(
                 );
             }
 
-            BoardPanel.createOrShow(context.extensionUri, model, projectId);
+            BoardPanel.createOrShow(context.extensionUri, model, projectId, context);
         }),
 
         vscode.commands.registerCommand('ghProjects.openInGitHub', (urlOrNode?: unknown) => {

@@ -6,19 +6,16 @@
     let currentData = { project: null, items: [], statusField: null, allLabels: [], allAssignees: [], singleSelectFields: [], swimlaneFields: [] };
     let swimlaneMode = 'none';
     let collapsedLanes = new Set();
-
-    // Filters: key = filter name, value = Set of selected values (empty = no filter)
-    let filters = {
-        labels: new Set(),        // label names
-        assignees: new Set(),     // login strings
-        fields: new Map(),        // fieldId → Set of optionIds
-        excludeLabels: new Set(), // label names to exclude
-    };
+    let filterQuery = ''; // GitHub-style text filter
+    let savedViews = []; // { name, filter, swimlane }[]
 
     window.addEventListener('message', event => {
         const msg = event.data;
         if (msg.type === 'update-board') {
             currentData = msg;
+            render();
+        } else if (msg.type === 'saved-views') {
+            savedViews = msg.views || [];
             render();
         }
     });
@@ -27,8 +24,6 @@
     root.addEventListener('click', function (e) {
         const target = e.target.closest('[data-action]');
         if (!target) return;
-
-        // Prevent card open-item from firing when clicking nested actions
         e.stopPropagation();
 
         switch (target.dataset.action) {
@@ -40,21 +35,6 @@
                     vscode.postMessage({ type: 'open-item', itemId: target.dataset.itemId });
                 }
                 break;
-            case 'toggle-label': {
-                const label = target.dataset.label;
-                if (filters.labels.has(label)) {
-                    filters.labels.delete(label);
-                } else {
-                    filters.labels.add(label);
-                }
-                render();
-                break;
-            }
-            case 'clear-labels':
-                filters.labels.clear();
-                filters.excludeLabels.clear();
-                render();
-                break;
             case 'toggle-lane': {
                 const laneId = target.dataset.laneId;
                 if (collapsedLanes.has(laneId)) {
@@ -65,6 +45,39 @@
                 render();
                 break;
             }
+            case 'save-view': {
+                const input = root.querySelector('#filter-input');
+                const name = prompt('View name:');
+                if (name) {
+                    vscode.postMessage({
+                        type: 'save-view',
+                        name,
+                        filter: input ? input.value : filterQuery,
+                        swimlane: swimlaneMode,
+                    });
+                }
+                break;
+            }
+            case 'load-view': {
+                const viewName = target.dataset.viewName;
+                const view = savedViews.find(v => v.name === viewName);
+                if (view) {
+                    filterQuery = view.filter || '';
+                    swimlaneMode = view.swimlane || 'none';
+                    collapsedLanes.clear();
+                    render();
+                }
+                break;
+            }
+            case 'delete-view': {
+                const viewName = target.dataset.viewName;
+                vscode.postMessage({ type: 'delete-view', name: viewName });
+                break;
+            }
+            case 'clear-filter':
+                filterQuery = '';
+                render();
+                break;
         }
     });
 
@@ -75,26 +88,22 @@
             swimlaneMode = target.value;
             collapsedLanes.clear();
             render();
-        } else if (target.dataset.action === 'filter-field') {
-            const fieldId = target.dataset.fieldId;
-            const selected = new Set();
-            for (const opt of target.selectedOptions) {
-                if (opt.value) selected.add(opt.value);
-            }
-            if (selected.size > 0) {
-                filters.fields.set(fieldId, selected);
-            } else {
-                filters.fields.delete(fieldId);
-            }
-            render();
-        } else if (target.dataset.action === 'filter-assignee') {
-            filters.assignees.clear();
-            for (const opt of target.selectedOptions) {
-                if (opt.value) filters.assignees.add(opt.value);
-            }
+        }
+    });
+
+    // Filter input: update on Enter or blur
+    root.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' && e.target.id === 'filter-input') {
+            filterQuery = e.target.value;
             render();
         }
     });
+    root.addEventListener('blur', function (e) {
+        if (e.target.id === 'filter-input') {
+            filterQuery = e.target.value;
+            render();
+        }
+    }, true);
 
     function render() {
         const { project, items, statusField, allLabels, allAssignees, singleSelectFields, swimlaneFields } = currentData;
@@ -103,14 +112,16 @@
             return;
         }
 
-        // Apply all filters (AND logic)
+        // Apply text filter
         let filteredItems = items || [];
-        filteredItems = applyFilters(filteredItems);
+        if (filterQuery.trim()) {
+            filteredItems = applyTextFilter(filteredItems, filterQuery);
+        }
 
         const options = statusField.options || [];
 
         // Build toolbar
-        let html = renderToolbar(project, allLabels || [], allAssignees || [], singleSelectFields || [], swimlaneFields || []);
+        let html = renderToolbar(project, swimlaneFields || []);
 
         // Render board based on swimlane mode
         if (swimlaneMode === 'none') {
@@ -123,45 +134,122 @@
         setupDragAndDrop();
     }
 
-    function applyFilters(items) {
+    // --- Text filter parser ---
+    // Syntax: field:value -field:value (AND logic, - means exclude)
+    // Supported fields: label, assignee, status, is (open/closed), milestone
+    // Project fields matched by lowercase name: horizon, priority, etc.
+
+    function parseFilterQuery(query) {
+        const predicates = [];
+        const tokens = query.match(/(-?\w[\w.]*):("[^"]*"|\S+)/g) || [];
+        tokens.forEach(token => {
+            const negate = token.startsWith('-');
+            const clean = negate ? token.slice(1) : token;
+            const colonIdx = clean.indexOf(':');
+            const field = clean.slice(0, colonIdx).toLowerCase();
+            let value = clean.slice(colonIdx + 1);
+            // Strip quotes
+            if (value.startsWith('"') && value.endsWith('"')) {
+                value = value.slice(1, -1);
+            }
+            predicates.push({ field, value, negate });
+        });
+        return predicates;
+    }
+
+    function applyTextFilter(items, query) {
+        const predicates = parseFilterQuery(query);
+        if (predicates.length === 0) return items;
+
+        // Build a field name → id map from singleSelectFields
+        const fieldNameToId = {};
+        const fieldNameToOptions = {};
+        (currentData.singleSelectFields || []).forEach(f => {
+            const key = f.name.toLowerCase();
+            fieldNameToId[key] = f.id;
+            fieldNameToOptions[key] = {};
+            (f.options || []).forEach(o => {
+                fieldNameToOptions[key][o.name.toLowerCase()] = o.id;
+            });
+        });
+
         return items.filter(item => {
-            // Label include filter
-            if (filters.labels.size > 0) {
-                const itemLabels = item.content?.labels?.nodes || [];
-                if (!itemLabels.some(l => filters.labels.has(l.name))) return false;
-            }
-            // Label exclude filter
-            if (filters.excludeLabels.size > 0) {
-                const itemLabels = item.content?.labels?.nodes || [];
-                if (itemLabels.some(l => filters.excludeLabels.has(l.name))) return false;
-            }
-            // Assignee filter
-            if (filters.assignees.size > 0) {
-                const itemAssignees = item.content?.assignees?.nodes || [];
-                if (!itemAssignees.some(a => filters.assignees.has(a.login))) return false;
-            }
-            // Single-select field filters
-            for (const [fieldId, selectedOptions] of filters.fields) {
-                const fv = (item.fieldValues?.nodes || []).find(
-                    fv => fv.__typename === 'ProjectV2ItemFieldSingleSelectValue' && fv.field?.id === fieldId
-                );
-                if (!fv || !selectedOptions.has(fv.optionId)) return false;
-            }
-            return true;
+            return predicates.every(pred => {
+                const result = matchPredicate(item, pred, fieldNameToId, fieldNameToOptions);
+                return pred.negate ? !result : result;
+            });
         });
     }
 
-    function getActiveFilterCount() {
-        let count = 0;
-        if (filters.labels.size > 0) count++;
-        if (filters.excludeLabels.size > 0) count++;
-        if (filters.assignees.size > 0) count++;
-        count += filters.fields.size;
-        return count;
+    function matchPredicate(item, pred, fieldNameToId, fieldNameToOptions) {
+        const content = item.content;
+        const val = pred.value.toLowerCase();
+
+        switch (pred.field) {
+            case 'label': {
+                const labels = content?.labels?.nodes || [];
+                return labels.some(l => l.name.toLowerCase() === val);
+            }
+            case 'assignee': {
+                const assignees = content?.assignees?.nodes || [];
+                return assignees.some(a => a.login.toLowerCase() === val || a.login.toLowerCase() === val.replace('@', ''));
+            }
+            case 'is': {
+                if (val === 'open') return content?.state === 'OPEN';
+                if (val === 'closed') return content?.state === 'CLOSED';
+                if (val === 'draft') return content?.__typename === 'DraftIssue';
+                if (val === 'pr') return content?.__typename === 'PullRequest';
+                if (val === 'issue') return content?.__typename === 'Issue';
+                return false;
+            }
+            case 'milestone': {
+                return content?.milestone?.title?.toLowerCase() === val;
+            }
+            case 'repo':
+            case 'repository': {
+                return content?.repository?.nameWithOwner?.toLowerCase() === val ||
+                       content?.repository?.name?.toLowerCase() === val;
+            }
+            case 'no': {
+                if (val === 'label') return !(content?.labels?.nodes?.length);
+                if (val === 'assignee') return !(content?.assignees?.nodes?.length);
+                if (val === 'milestone') return !content?.milestone;
+                return false;
+            }
+            default: {
+                // Match against project single-select fields by name
+                const fieldId = fieldNameToId[pred.field];
+                if (fieldId) {
+                    const fv = (item.fieldValues?.nodes || []).find(
+                        fv => fv.__typename === 'ProjectV2ItemFieldSingleSelectValue' && fv.field?.id === fieldId
+                    );
+                    if (!fv) return false;
+                    // Match by option name (case-insensitive)
+                    return fv.name.toLowerCase() === val;
+                }
+                // Fallback: text search in title
+                return content?.title?.toLowerCase().includes(val);
+            }
+        }
     }
 
-    function renderToolbar(project, allLabels, allAssignees, singleSelectFields, swimlaneFields) {
-        let html = '<div class="board-toolbar">';
+    function renderToolbar(project, swimlaneFields) {
+        let html = '';
+
+        // View tabs
+        html += '<div class="view-tabs">';
+        savedViews.forEach(v => {
+            const isActive = filterQuery === v.filter && swimlaneMode === v.swimlane;
+            html += `<span class="view-tab${isActive ? ' active' : ''}" data-action="load-view" data-view-name="${escapeHtml(v.name)}">`;
+            html += escapeHtml(v.name);
+            html += `<span class="view-tab-delete" data-action="delete-view" data-view-name="${escapeHtml(v.name)}">✕</span>`;
+            html += '</span>';
+        });
+        html += '<span class="view-tab new-view" data-action="save-view">+ Save view</span>';
+        html += '</div>';
+
+        // Main toolbar
+        html += '<div class="board-toolbar">';
         html += `<h2>${escapeHtml(project.title)}</h2>`;
 
         // Swimlane dropdown
@@ -180,60 +268,19 @@
         html += '<button data-action="refresh">↻ Refresh</button>';
         html += '</div>';
 
-        // Filter bar
-        const filterCount = getActiveFilterCount();
+        // Filter input
         html += '<div class="filter-bar">';
-        html += `<span class="filter-bar-label">Filters${filterCount > 0 ? ` (${filterCount})` : ''}:</span>`;
-
-        // Single-select field filters (Horizon, Priority, etc.)
-        (singleSelectFields || []).filter(f => f.name !== 'Status').forEach(field => {
-            const activeSet = filters.fields.get(field.id);
-            html += '<div class="filter-dropdown">';
-            html += `<select data-action="filter-field" data-field-id="${escapeHtml(field.id)}" class="toolbar-select filter-select" multiple size="1" title="${escapeHtml(field.name)}">`;
-            (field.options || []).forEach(opt => {
-                const sel = activeSet && activeSet.has(opt.id) ? ' selected' : '';
-                html += `<option value="${escapeHtml(opt.id)}"${sel}>${escapeHtml(opt.name)}</option>`;
-            });
-            html += '</select>';
-            html += `<span class="filter-dropdown-label">${escapeHtml(field.name)}</span>`;
-            html += '</div>';
-        });
-
-        // Assignee filter
-        if (allAssignees && allAssignees.length > 0) {
-            html += '<div class="filter-dropdown">';
-            html += '<select data-action="filter-assignee" class="toolbar-select filter-select" multiple size="1" title="Assignee">';
-            allAssignees.forEach(login => {
-                const sel = filters.assignees.has(login) ? ' selected' : '';
-                html += `<option value="${escapeHtml(login)}"${sel}>@${escapeHtml(login)}</option>`;
-            });
-            html += '</select>';
-            html += '<span class="filter-dropdown-label">Assignee</span>';
-            html += '</div>';
+        html += '<span class="filter-icon">🔍</span>';
+        html += `<input id="filter-input" class="filter-input" type="text" value="${escapeHtml(filterQuery)}" `;
+        html += 'placeholder="horizon:Now -label:epic assignee:user milestone:MVP is:open">';
+        if (filterQuery) {
+            const count = (currentData.items || []).length;
+            const filtered = applyTextFilter(currentData.items || [], filterQuery).length;
+            html += `<span class="filter-count">${filtered} of ${count}</span>`;
+            html += '<span class="filter-clear" data-action="clear-filter">✕</span>';
         }
-
-        // Label chips (toggle include)
-        if (allLabels && allLabels.length > 0) {
-            html += '<div class="toolbar-group label-filters">';
-            allLabels.forEach(l => {
-                const isIncluded = filters.labels.has(l.name);
-                const isExcluded = filters.excludeLabels.has(l.name);
-                let chipClass = 'filter-chip';
-                let prefix = '';
-                if (isIncluded) { chipClass += ' active'; }
-                if (isExcluded) { chipClass += ' excluded'; prefix = '−'; }
-                html += `<span class="${chipClass}" `
-                    + `data-action="toggle-label" data-label="${escapeHtml(l.name)}" `
-                    + `style="--chip-bg:#${l.color};--chip-fg:${getContrastColor(l.color)}">`
-                    + `${prefix}${escapeHtml(l.name)}</span>`;
-            });
-            if (filters.labels.size > 0 || filters.excludeLabels.size > 0) {
-                html += '<span class="filter-chip clear-chip" data-action="clear-labels">✕</span>';
-            }
-            html += '</div>';
-        }
-
         html += '</div>';
+
         return html;
     }
 

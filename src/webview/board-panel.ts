@@ -3,6 +3,12 @@ import { getWebviewContent, MoveItemMessage, OpenItemMessage } from './webview-u
 import { ProjectModel } from '../models/project-model';
 import { ProjectItem, ProjectDetail, ProjectSingleSelectField } from '../api/types';
 
+interface SavedView {
+    name: string;
+    filter: string;
+    swimlane: string;
+}
+
 export class BoardPanel {
     public static currentPanels = new Map<string, BoardPanel>();
 
@@ -13,6 +19,7 @@ export class BoardPanel {
         extensionUri: vscode.Uri,
         model: ProjectModel,
         projectId: string,
+        context: vscode.ExtensionContext,
     ): BoardPanel {
         const existing = BoardPanel.currentPanels.get(projectId);
         if (existing) {
@@ -20,7 +27,7 @@ export class BoardPanel {
             existing.update();
             return existing;
         }
-        const instance = new BoardPanel(extensionUri, model, projectId);
+        const instance = new BoardPanel(extensionUri, model, projectId, context);
         BoardPanel.currentPanels.set(projectId, instance);
         return instance;
     }
@@ -29,6 +36,7 @@ export class BoardPanel {
         private extensionUri: vscode.Uri,
         private model: ProjectModel,
         private projectId: string,
+        private context: vscode.ExtensionContext,
     ) {
         const detail = model.getProjectDetail(projectId);
         const title = detail?.title ?? 'Project Board';
@@ -133,13 +141,44 @@ export class BoardPanel {
                 break;
             case 'ready':
                 await this.update();
+                this.sendViews();
                 break;
             case 'create-draft': {
                 const m = msg as { type: string; title: string };
                 await this.model.addDraftIssue(this.projectId, m.title);
                 break;
             }
+            case 'save-view': {
+                const m = msg as { type: string; name: string; filter: string; swimlane: string };
+                const views = this.getSavedViews();
+                views.push({ name: m.name, filter: m.filter, swimlane: m.swimlane });
+                this.context.workspaceState.update(`projectual.views.${this.projectId}`, views);
+                this.sendViews();
+                break;
+            }
+            case 'delete-view': {
+                const m = msg as { type: string; name: string };
+                let views = this.getSavedViews();
+                views = views.filter(v => v.name !== m.name);
+                this.context.workspaceState.update(`projectual.views.${this.projectId}`, views);
+                this.sendViews();
+                break;
+            }
+            case 'load-views':
+                this.sendViews();
+                break;
         }
+    }
+
+    private getSavedViews(): SavedView[] {
+        return this.context.workspaceState.get<SavedView[]>(`projectual.views.${this.projectId}`) ?? [];
+    }
+
+    private sendViews(): void {
+        this.panel.webview.postMessage({
+            type: 'saved-views',
+            views: this.getSavedViews(),
+        });
     }
 
     dispose(): void {

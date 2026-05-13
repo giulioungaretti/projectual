@@ -210,87 +210,118 @@ body {
 .filter-bar {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
     padding: 8px 0 12px;
-    flex-wrap: wrap;
     border-bottom: 1px solid var(--vscode-panel-border);
     margin-bottom: 12px;
 }
 
-.filter-bar-label {
-    font-size: 0.85em;
-    font-weight: 600;
+.filter-icon {
+    font-size: 0.9em;
+    opacity: 0.6;
+}
+
+.filter-input {
+    flex: 1;
+    background: var(--vscode-input-background);
+    color: var(--vscode-input-foreground);
+    border: 1px solid var(--vscode-input-border);
+    border-radius: 4px;
+    padding: 5px 10px;
+    font-size: var(--vscode-font-size);
+    font-family: var(--vscode-editor-font-family, monospace);
+}
+
+.filter-input:focus {
+    border-color: var(--vscode-focusBorder);
+    outline: none;
+}
+
+.filter-input::placeholder {
+    color: var(--vscode-input-placeholderForeground);
+    font-family: var(--vscode-font-family);
+    font-style: italic;
+}
+
+.filter-count {
+    font-size: 0.8em;
     color: var(--vscode-descriptionForeground);
     white-space: nowrap;
 }
 
-.filter-dropdown {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    position: relative;
-}
-
-.filter-dropdown-label {
-    font-size: 0.7em;
-    color: var(--vscode-descriptionForeground);
-    text-transform: uppercase;
-    letter-spacing: 0.3px;
-}
-
-.filter-select {
-    min-width: 90px;
-    max-width: 140px;
-    height: 26px;
-    overflow: hidden;
-}
-
-.filter-select[multiple] {
-    height: auto;
-    min-height: 26px;
-    max-height: 80px;
-}
-
-/* Label filter chips */
-.label-filters {
-    flex-wrap: wrap;
-    gap: 4px;
-}
-
-.filter-chip {
-    display: inline-block;
-    padding: 2px 8px;
-    border-radius: 10px;
-    font-size: 0.75em;
-    font-weight: 500;
+.filter-clear {
     cursor: pointer;
-    opacity: 0.5;
+    font-size: 0.85em;
+    color: var(--vscode-descriptionForeground);
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+.filter-clear:hover {
+    background: var(--vscode-toolbar-hoverBackground);
+}
+
+/* View tabs */
+.view-tabs {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 0;
+    overflow-x: auto;
+}
+
+.view-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 12px;
+    border-radius: 4px;
+    font-size: 0.85em;
+    cursor: pointer;
+    background: var(--vscode-tab-inactiveBackground);
+    color: var(--vscode-tab-inactiveForeground);
     border: 1px solid transparent;
-    background: var(--chip-bg, var(--vscode-badge-background));
-    color: var(--chip-fg, var(--vscode-badge-foreground));
-    transition: opacity 0.15s, border-color 0.15s;
+    white-space: nowrap;
 }
 
-.filter-chip:hover {
-    opacity: 0.8;
+.view-tab:hover {
+    background: var(--vscode-tab-hoverBackground, var(--vscode-list-hoverBackground));
 }
 
-.filter-chip.active {
-    opacity: 1;
+.view-tab.active {
+    background: var(--vscode-tab-activeBackground);
+    color: var(--vscode-tab-activeForeground);
     border-color: var(--vscode-focusBorder);
 }
 
-.filter-chip.excluded {
-    opacity: 0.7;
-    text-decoration: line-through;
-    border-color: var(--vscode-errorForeground, #f44);
+.view-tab-delete {
+    font-size: 0.7em;
+    opacity: 0;
+    padding: 1px 3px;
+    border-radius: 3px;
 }
 
-.filter-chip.clear-chip {
-    background: var(--vscode-button-secondaryBackground);
-    color: var(--vscode-button-secondaryForeground);
-    opacity: 1;
+.view-tab:hover .view-tab-delete {
+    opacity: 0.6;
 }
+
+.view-tab-delete:hover {
+    opacity: 1;
+    background: var(--vscode-toolbar-hoverBackground);
+}
+
+.view-tab.new-view {
+    background: transparent;
+    border: 1px dashed var(--vscode-panel-border);
+    color: var(--vscode-descriptionForeground);
+}
+
+.view-tab.new-view:hover {
+    border-color: var(--vscode-focusBorder);
+    color: var(--vscode-foreground);
+}
+
+/* Label filter chips (kept for card labels) */
 
 /* Swimlane layout */
 .board-swimlaned {
