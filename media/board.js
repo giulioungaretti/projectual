@@ -220,7 +220,13 @@
                 return false;
             }
             case 'milestone': {
-                return content?.milestone?.title?.toLowerCase() === val;
+                // Check issue milestone
+                if (content?.milestone?.title?.toLowerCase() === val) return true;
+                // Check project milestone field value
+                const msFv = (item.fieldValues?.nodes || []).find(
+                    fv => fv.__typename === 'ProjectV2ItemFieldMilestoneValue'
+                );
+                return msFv?.milestone?.title?.toLowerCase() === val;
             }
             case 'repo':
             case 'repository': {
@@ -230,7 +236,11 @@
             case 'no': {
                 if (val === 'label') return !(content?.labels?.nodes?.length);
                 if (val === 'assignee') return !(content?.assignees?.nodes?.length);
-                if (val === 'milestone') return !content?.milestone;
+                if (val === 'milestone') {
+                    const hasMilestone = content?.milestone ||
+                        (item.fieldValues?.nodes || []).some(fv => fv.__typename === 'ProjectV2ItemFieldMilestoneValue' && fv.milestone);
+                    return !hasMilestone;
+                }
                 return false;
             }
             default: {

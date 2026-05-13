@@ -70,6 +70,11 @@ export const GET_PROJECT_ITEMS = `
                   __typename title iterationId startDate duration
                   field { ... on ProjectV2FieldCommon { id name } }
                 }
+                ... on ProjectV2ItemFieldMilestoneValue {
+                  __typename
+                  milestone { title description dueOn }
+                  field { ... on ProjectV2FieldCommon { id name } }
+                }
               }
             }
             content {
