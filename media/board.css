@@ -349,6 +349,44 @@ body {
 
 /* Label filter chips (kept for card labels) */
 
+/* Label chip filters below filter bar */
+.label-chips {
+    display: flex;
+    gap: 5px;
+    flex-wrap: wrap;
+    padding: 4px 0 10px;
+}
+
+.label-chip {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 0.75em;
+    font-weight: 500;
+    cursor: pointer;
+    opacity: 0.45;
+    border: 2px solid transparent;
+    background: var(--chip-bg, var(--vscode-badge-background));
+    color: var(--chip-fg, var(--vscode-badge-foreground));
+    transition: opacity 0.15s, border-color 0.15s;
+    user-select: none;
+}
+
+.label-chip:hover {
+    opacity: 0.75;
+}
+
+.label-chip.included {
+    opacity: 1;
+    border-color: var(--vscode-focusBorder);
+}
+
+.label-chip.excluded {
+    opacity: 0.6;
+    text-decoration: line-through;
+    border-color: var(--vscode-errorForeground, #f44);
+}
+
 /* Swimlane layout */
 .board-swimlaned {
     display: flex;

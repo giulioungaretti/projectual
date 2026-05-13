@@ -78,6 +78,21 @@
                 filterQuery = '';
                 render();
                 break;
+            case 'toggle-label': {
+                const label = target.dataset.label;
+                // Cycle: off → include → exclude → off
+                const includeToken = `label:${label.includes(' ') ? '"' + label + '"' : label}`;
+                const excludeToken = `-label:${label.includes(' ') ? '"' + label + '"' : label}`;
+                if (filterQuery.includes(excludeToken)) {
+                    filterQuery = filterQuery.replace(excludeToken, '').replace(/\s+/g, ' ').trim();
+                } else if (filterQuery.includes(includeToken)) {
+                    filterQuery = filterQuery.replace(includeToken, excludeToken).replace(/\s+/g, ' ').trim();
+                } else {
+                    filterQuery = (filterQuery + ' ' + includeToken).trim();
+                }
+                render();
+                break;
+            }
         }
     });
 
@@ -236,6 +251,7 @@
     }
 
     function renderToolbar(project, swimlaneFields) {
+        const allLabels = currentData.allLabels || [];
         let html = '';
 
         // View tabs
@@ -274,7 +290,7 @@
         html += '<div class="filter-bar">';
         html += '<span class="filter-icon">🔍</span>';
         html += `<input id="filter-input" class="filter-input" type="text" value="${escapeHtml(filterQuery)}" `;
-        html += 'placeholder="horizon:Now -label:epic assignee:user milestone:MVP is:open">';
+        html += 'placeholder="horizon:Now -label:epic assignee:user is:open">';
         if (filterQuery) {
             const count = (currentData.items || []).length;
             const filtered = applyTextFilter(currentData.items || [], filterQuery).length;
@@ -282,6 +298,25 @@
             html += '<span class="filter-clear" data-action="clear-filter">✕</span>';
         }
         html += '</div>';
+
+        // Label chips
+        if (allLabels.length > 0) {
+            html += '<div class="label-chips">';
+            allLabels.forEach(l => {
+                const token = l.name.includes(' ') ? '"' + l.name + '"' : l.name;
+                const isIncluded = filterQuery.includes(`label:${token}`) && !filterQuery.includes(`-label:${token}`);
+                const isExcluded = filterQuery.includes(`-label:${token}`);
+                let cls = 'label-chip';
+                if (isIncluded) cls += ' included';
+                if (isExcluded) cls += ' excluded';
+                html += `<span class="${cls}" data-action="toggle-label" data-label="${escapeHtml(l.name)}" `
+                    + `style="--chip-bg:#${l.color};--chip-fg:${getContrastColor(l.color)}">`;
+                if (isExcluded) html += '−';
+                html += escapeHtml(l.name);
+                html += '</span>';
+            });
+            html += '</div>';
+        }
 
         return html;
     }
