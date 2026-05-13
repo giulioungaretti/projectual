@@ -1,22 +1,24 @@
-# GitHub Projects v2 for VS Code
+# Projectual — GitHub Projects in VS Code
 
-View and manage GitHub Projects v2 boards, issues, and fields directly in VS Code.
+Kanban boards, swimlanes, issue editing, and dashboards for GitHub Projects v2 — without leaving VS Code.
+
+![Projectual Screenshot](media/screenshot.png)
 
 ## Features
 
-- **TreeView Sidebar** — Browse your GitHub Projects, grouped by status columns
-- **Kanban Board** — Full board view with drag-and-drop to change issue status
-- **Issue Detail Panel** — View and edit issue title, body, status, and custom fields
-- **Quick Actions** — Change status, assignees, and labels from context menus
+- **Kanban Board** — Drag-and-drop status changes, label filter chips, swimlanes by label/assignee/custom fields
+- **TreeView Sidebar** — Browse projects with nested sub-issues, pin/focus a single project, group by status or flat list
+- **Issue Editor** — Open issues as editable markdown with YAML frontmatter, inline preview, and CodeLens actions
+- **Quick Actions** — Change status, assignees, labels, and custom fields from context menus and command palette
 - **Create Issues & Drafts** — Create new issues or draft issues without leaving VS Code
-- **Open in GitHub** — Quick link to open any item in your browser
+- **Sub-issue Hierarchy** — Parent/child nesting with progress indicators (`[2/5]`)
 
 ## Getting Started
 
 1. Install the extension
-2. Click the **GitHub Projects** icon in the Activity Bar (sidebar)
+2. Click the **Projectual** icon in the Activity Bar (sidebar)
 3. Sign in to GitHub when prompted (uses VS Code's built-in GitHub auth)
-4. Your projects will appear in the sidebar
+4. Your projects appear in the sidebar — click the board icon to open a Kanban view
 
 ## Commands
 
@@ -25,12 +27,14 @@ View and manage GitHub Projects v2 boards, issues, and fields directly in VS Cod
 | `GitHub Projects: Sign In to GitHub` | Authenticate with GitHub |
 | `GitHub Projects: Refresh` | Refresh all project data |
 | `GitHub Projects: Open Project Board` | Open a Kanban board for a project |
+| `GitHub Projects: Focus Project` | Pin the tree to a single project |
+| `GitHub Projects: Group by Status` | Toggle status grouping in tree |
 | `GitHub Projects: Create Issue` | Create a new issue and add to a project |
 | `GitHub Projects: Create Draft Issue` | Create a draft issue in a project |
 | `GitHub Projects: Change Status` | Change an item's status |
 | `GitHub Projects: Change Assignees` | Modify issue assignees |
 | `GitHub Projects: Change Labels` | Modify issue labels |
-| `GitHub Projects: Edit Issue` | Open issue detail panel for editing |
+| `GitHub Projects: Edit Issue` | Open issue as editable markdown |
 | `GitHub Projects: Open in GitHub` | Open item in browser |
 
 ## Required GitHub Permissions
@@ -85,8 +89,13 @@ src/
 │   └── tree-types.ts         # Tree node types
 ├── webview/
 │   ├── board-panel.ts        # Kanban board WebviewPanel
-│   ├── issue-panel.ts        # Issue detail WebviewPanel
+│   ├── issue-document-provider.ts  # Issue-as-markdown FileSystemProvider
 │   └── webview-utils.ts      # HTML, CSP, messaging helpers
+├── providers/
+│   ├── issue-codelens-provider.ts  # CodeLens for issue actions
+│   ├── issue-decoration-provider.ts
+│   ├── issue-diagnostic-provider.ts
+│   └── issue-folding-provider.ts
 ├── commands/
 │   ├── project-commands.ts   # Project-level commands
 │   ├── issue-commands.ts     # Issue CRUD commands
