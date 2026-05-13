@@ -5,6 +5,14 @@
   "version": "0.1.0",
   "publisher": "giulioungaretti",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/giulioungaretti/projectual"
+  },
+  "homepage": "https://github.com/giulioungaretti/projectual#readme",
+  "bugs": {
+    "url": "https://github.com/giulioungaretti/projectual/issues"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -213,7 +221,7 @@
   },
   "devDependencies": {
     "@types/node": "^25.7.0",
-    "@types/vscode": "^1.118.0",
+    "@types/vscode": "^1.85.0",
     "esbuild": "^0.28.0",
     "typescript": "^6.0.3"
   }
