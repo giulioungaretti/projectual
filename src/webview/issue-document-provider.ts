@@ -1,17 +1,25 @@
 import * as vscode from 'vscode';
+import { stringify as yamlStringify, parse as yamlParse } from 'yaml';
 import { ProjectModel } from '../models/project-model';
-import { ProjectItem, IssueContent, DraftIssueContent, PullRequestContent, FieldValue } from '../api/types';
+import {
+    ProjectItem, IssueContent, DraftIssueContent, PullRequestContent, FieldValue,
+} from '../api/types';
 
 export const ISSUE_SCHEME = 'gh-issue';
 const NO_DESCRIPTION_PLACEHOLDER = '*No description provided.*';
 
-interface IssueDocumentInfo {
+export interface IssueDocumentInfo {
     projectId: string;
     item: ProjectItem;
     uri: vscode.Uri;
     content: Uint8Array;
     mtime: number;
     size: number;
+}
+
+export interface ParsedIssueDocument {
+    frontmatter: Record<string, unknown>;
+    body: string;
 }
 
 export class IssueDocumentProvider implements vscode.FileSystemProvider {
@@ -33,11 +41,9 @@ export class IssueDocumentProvider implements vscode.FileSystemProvider {
                             doc => doc.uri.toString() === info.uri.toString() && doc.isDirty
                         );
                         info.item = updated;
-                        if (isDirty) {
-                            continue;
-                        }
+                        if (isDirty) { continue; }
 
-                        const rendered = this.renderMarkdown({ ...info, item: updated });
+                        const rendered = this.renderDocument(info);
                         if (rendered !== this.decoder.decode(info.content)) {
                             this.updateStoredContent(info, rendered);
                             this._onDidChangeFile.fire([{ type: vscode.FileChangeType.Changed, uri: info.uri }]);
@@ -47,6 +53,8 @@ export class IssueDocumentProvider implements vscode.FileSystemProvider {
             })
         );
     }
+
+    // --- Public API ---
 
     registerDocument(projectId: string, item: ProjectItem): vscode.Uri {
         const uri = this.buildUri(projectId, item);
@@ -58,19 +66,13 @@ export class IssueDocumentProvider implements vscode.FileSystemProvider {
             return uri;
         }
 
-        const markdown = this.renderMarkdown({
-            projectId,
-            item,
-            uri,
-            content: new Uint8Array(),
-            mtime: 0,
-            size: 0,
+        const markdown = this.renderDocument({
+            projectId, item, uri,
+            content: new Uint8Array(), mtime: 0, size: 0,
         });
         const contentBytes = this.encoder.encode(markdown);
         this.documents.set(key, {
-            projectId,
-            item,
-            uri,
+            projectId, item, uri,
             content: contentBytes,
             mtime: Date.now(),
             size: contentBytes.byteLength,
@@ -81,6 +83,29 @@ export class IssueDocumentProvider implements vscode.FileSystemProvider {
     getDocumentInfo(uri: vscode.Uri): IssueDocumentInfo | undefined {
         return this.documents.get(uri.toString());
     }
+
+    /** Parse a document's text into frontmatter object + body string. */
+    static parseDocument(text: string): ParsedIssueDocument {
+        const normalized = text.replace(/\r\n/g, '\n');
+        const match = normalized.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
+        if (!match) {
+            return { frontmatter: {}, body: normalized };
+        }
+        let frontmatter: Record<string, unknown> = {};
+        try {
+            frontmatter = yamlParse(match[1]) ?? {};
+        } catch {
+            frontmatter = {};
+        }
+        return { frontmatter, body: match[2] };
+    }
+
+    /** Convert a field display name to a YAML-safe key. */
+    static fieldNameToKey(name: string): string {
+        return name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+    }
+
+    // --- FileSystemProvider ---
 
     watch(): vscode.Disposable {
         return new vscode.Disposable(() => undefined);
@@ -96,13 +121,8 @@ export class IssueDocumentProvider implements vscode.FileSystemProvider {
         };
     }
 
-    readDirectory(): [string, vscode.FileType][] {
-        return [];
-    }
-
-    createDirectory(): void {
-        throw vscode.FileSystemError.NoPermissions('Directories are not supported.');
-    }
+    readDirectory(): [string, vscode.FileType][] { return []; }
+    createDirectory(): void { throw vscode.FileSystemError.NoPermissions(); }
 
     readFile(uri: vscode.Uri): Uint8Array {
         return this.requireDocument(uri).content;
@@ -111,58 +131,180 @@ export class IssueDocumentProvider implements vscode.FileSystemProvider {
     async writeFile(uri: vscode.Uri, content: Uint8Array, options: { create: boolean; overwrite: boolean }): Promise<void> {
         const info = this.documents.get(uri.toString());
         if (!info) {
-            if (!options.create) {
-                throw vscode.FileSystemError.FileNotFound(uri);
-            }
+            if (!options.create) { throw vscode.FileSystemError.FileNotFound(uri); }
             throw vscode.FileSystemError.NoPermissions('New issue documents cannot be created directly.');
         }
 
         const text = this.decoder.decode(content);
-        const parsed = this.parseEditableContent(info.item, text);
+        const { frontmatter, body } = IssueDocumentProvider.parseDocument(text);
+        const title = typeof frontmatter.title === 'string' && frontmatter.title.trim()
+            ? frontmatter.title.trim()
+            : (info.item.content?.title ?? 'Issue');
 
+        let cleanBody = body.trim();
+        if (cleanBody === NO_DESCRIPTION_PLACEHOLDER) { cleanBody = ''; }
+
+        // Save title + body via issue/draft mutation
         if (info.item.content?.__typename === 'Issue') {
-            await this.model.updateIssue(info.item.content.id, parsed.title, parsed.body || undefined);
+            await this.model.updateIssue(info.item.content.id, title, cleanBody || undefined);
         } else if (info.item.content?.__typename === 'DraftIssue') {
-            await this.model.updateDraftIssue(info.item.content.id, parsed.title, parsed.body || undefined);
+            await this.model.updateDraftIssue(info.item.content.id, title, cleanBody || undefined);
         } else {
             throw vscode.FileSystemError.NoPermissions('Only issues and draft issues can be saved.');
         }
 
+        // Save free-form project field changes (text, number, date)
+        await this.saveFreeFormFields(info, frontmatter);
+
+        // Reload and refresh
         await this.model.loadProjectItems(info.projectId);
-        const updated = this.model.getProjectItems(info.projectId).find(item => item.id === info.item.id);
+        const updated = this.model.getProjectItems(info.projectId).find(i => i.id === info.item.id);
         if (updated) {
             info.item = updated;
-            this.updateStoredContent(info, this.renderMarkdown(info));
+            this.updateStoredContent(info, this.renderDocument(info));
         } else {
             this.updateStoredContent(info, text);
         }
-
         this._onDidChangeFile.fire([{ type: vscode.FileChangeType.Changed, uri }]);
     }
 
-    delete(): void {
-        throw vscode.FileSystemError.NoPermissions('Issue documents cannot be deleted.');
+    delete(): void { throw vscode.FileSystemError.NoPermissions(); }
+    rename(): void { throw vscode.FileSystemError.NoPermissions(); }
+
+    // --- Rendering ---
+
+    private renderDocument(info: IssueDocumentInfo): string {
+        const { item } = info;
+        const content = item.content;
+        if (!content) { return '---\ntitle: (Redacted item)\n---\n'; }
+
+        const fm: Record<string, unknown> = {};
+        let body = '';
+
+        if (content.__typename === 'Issue') {
+            const issue = content as IssueContent;
+            fm.title = issue.title;
+            fm.repository = issue.repository.nameWithOwner;
+            fm.number = issue.number;
+            fm.state = issue.state;
+            fm.url = issue.url;
+            if (issue.assignees?.nodes?.length) {
+                fm.assignees = issue.assignees.nodes.map(a => a.login);
+            }
+            if (issue.labels?.nodes?.length) {
+                fm.labels = issue.labels.nodes.map(l => l.name);
+            }
+            if (issue.milestone) {
+                fm.milestone = issue.milestone.title;
+            }
+            if (issue.subIssuesSummary && issue.subIssuesSummary.total > 0) {
+                fm.sub_issues = `${issue.subIssuesSummary.completed}/${issue.subIssuesSummary.total} (${issue.subIssuesSummary.percentCompleted}%)`;
+            }
+            this.addFieldValuesToFrontmatter(fm, item);
+            body = issue.body || NO_DESCRIPTION_PLACEHOLDER;
+
+        } else if (content.__typename === 'DraftIssue') {
+            const draft = content as DraftIssueContent;
+            fm.title = draft.title;
+            fm.type = 'Draft Issue';
+            this.addFieldValuesToFrontmatter(fm, item);
+            body = draft.body || NO_DESCRIPTION_PLACEHOLDER;
+
+        } else if (content.__typename === 'PullRequest') {
+            const pr = content as PullRequestContent;
+            fm.title = pr.title;
+            fm.repository = pr.repository.nameWithOwner;
+            fm.number = pr.number;
+            fm.state = pr.state;
+            fm.url = pr.url;
+            if (pr.assignees?.nodes?.length) {
+                fm.assignees = pr.assignees.nodes.map(a => a.login);
+            }
+            this.addFieldValuesToFrontmatter(fm, item);
+        }
+
+        const yamlBlock = yamlStringify(fm, { lineWidth: 0 }).trimEnd();
+        const parts = ['---', yamlBlock, '---', ''];
+        if (body) { parts.push(body, ''); }
+        return parts.join('\n');
     }
 
-    rename(): void {
-        throw vscode.FileSystemError.NoPermissions('Issue documents cannot be renamed.');
+    private addFieldValuesToFrontmatter(fm: Record<string, unknown>, item: ProjectItem): void {
+        for (const fv of item.fieldValues?.nodes ?? []) {
+            if (fv.field?.name === 'Title') { continue; }
+            const key = IssueDocumentProvider.fieldNameToKey(fv.field?.name ?? '');
+            if (!key) { continue; }
+            const val = this.formatFieldValue(fv);
+            if (val !== undefined && val !== '') { fm[key] = val; }
+        }
     }
+
+    private formatFieldValue(fv: FieldValue): string | number | undefined {
+        switch (fv.__typename) {
+            case 'ProjectV2ItemFieldTextValue': return fv.text || undefined;
+            case 'ProjectV2ItemFieldNumberValue': return fv.number ?? undefined;
+            case 'ProjectV2ItemFieldDateValue': return fv.date || undefined;
+            case 'ProjectV2ItemFieldSingleSelectValue': return fv.name || undefined;
+            case 'ProjectV2ItemFieldIterationValue': return fv.title || undefined;
+            default: return undefined;
+        }
+    }
+
+    // --- Free-form field save ---
+
+    private async saveFreeFormFields(info: IssueDocumentInfo, frontmatter: Record<string, unknown>): Promise<void> {
+        const detail = this.model.getProjectDetail(info.projectId);
+        if (!detail) { return; }
+
+        for (const field of detail.fields.nodes) {
+            if (field.__typename !== 'ProjectV2Field') { continue; }
+            if (field.dataType === 'TITLE') { continue; }
+
+            const key = IssueDocumentProvider.fieldNameToKey(field.name);
+            if (!(key in frontmatter)) { continue; }
+
+            const newValue = frontmatter[key];
+            const currentFv = info.item.fieldValues.nodes.find(fv => fv.field?.name === field.name);
+            let mutationValue: Record<string, unknown> | undefined;
+
+            if (field.dataType === 'TEXT') {
+                const newText = String(newValue ?? '');
+                const curText = currentFv?.__typename === 'ProjectV2ItemFieldTextValue' ? currentFv.text : '';
+                if (newText !== curText) { mutationValue = { text: newText }; }
+            } else if (field.dataType === 'NUMBER') {
+                const newNum = typeof newValue === 'number' ? newValue : parseFloat(String(newValue));
+                const curNum = currentFv?.__typename === 'ProjectV2ItemFieldNumberValue' ? currentFv.number : NaN;
+                if (!isNaN(newNum) && newNum !== curNum) { mutationValue = { number: newNum }; }
+            } else if (field.dataType === 'DATE') {
+                const newDate = String(newValue ?? '');
+                const curDate = currentFv?.__typename === 'ProjectV2ItemFieldDateValue' ? currentFv.date : '';
+                if (newDate && newDate !== curDate) { mutationValue = { date: newDate }; }
+            }
+
+            if (mutationValue) {
+                try {
+                    await this.model.updateItemField(info.projectId, info.item.id, field.id, mutationValue);
+                } catch (err) {
+                    vscode.window.showWarningMessage(`Failed to update field "${field.name}": ${err}`);
+                }
+            }
+        }
+    }
+
+    // --- Internal helpers ---
 
     private buildUri(projectId: string, item: ProjectItem): vscode.Uri {
         const content = item.content;
         let name = 'item';
         if (content) {
             if (content.__typename === 'Issue') {
-                const issue = content as IssueContent;
-                name = `${issue.repository.nameWithOwner}#${issue.number}`;
+                name = `${(content as IssueContent).repository.nameWithOwner}#${(content as IssueContent).number}`;
             } else if (content.__typename === 'DraftIssue') {
                 name = `draft-${item.id.slice(0, 8)}`;
             } else if (content.__typename === 'PullRequest') {
-                const pr = content as PullRequestContent;
-                name = `${pr.repository.nameWithOwner}#${pr.number}`;
+                name = `${(content as PullRequestContent).repository.nameWithOwner}#${(content as PullRequestContent).number}`;
             }
         }
-        // Encode projectId and itemId in the query so we can look them up
         return vscode.Uri.from({
             scheme: ISSUE_SCHEME,
             path: `/${name.replace(/\//g, '-')}.md`,
@@ -172,9 +314,7 @@ export class IssueDocumentProvider implements vscode.FileSystemProvider {
 
     private requireDocument(uri: vscode.Uri): IssueDocumentInfo {
         const info = this.documents.get(uri.toString());
-        if (!info) {
-            throw vscode.FileSystemError.FileNotFound(uri);
-        }
+        if (!info) { throw vscode.FileSystemError.FileNotFound(uri); }
         return info;
     }
 
@@ -183,140 +323,6 @@ export class IssueDocumentProvider implements vscode.FileSystemProvider {
         info.content = bytes;
         info.mtime = Date.now();
         info.size = bytes.byteLength;
-    }
-
-    private renderMarkdown(info: IssueDocumentInfo): string {
-        const { item } = info;
-        const content = item.content;
-        if (!content) {
-            return '# (Redacted item)';
-        }
-
-        const lines: string[] = [];
-
-        if (content.__typename === 'Issue') {
-            const issue = content as IssueContent;
-            lines.push(`# ${issue.title}`);
-            lines.push('');
-            lines.push(`> **Repository:** ${issue.repository.nameWithOwner} · **#${issue.number}** · **State:** ${issue.state} · [Open in GitHub](${issue.url})`);
-            lines.push('');
-
-            // Metadata section
-            const meta: string[] = [];
-            if (issue.assignees?.nodes?.length) {
-                meta.push(`**Assignees:** ${issue.assignees.nodes.map(a => `@${a.login}`).join(', ')}`);
-            }
-            if (issue.labels?.nodes?.length) {
-                meta.push(`**Labels:** ${issue.labels.nodes.map(l => `\`${l.name}\``).join(', ')}`);
-            }
-            if (issue.milestone) {
-                meta.push(`**Milestone:** ${issue.milestone.title}`);
-            }
-            if (issue.subIssuesSummary && issue.subIssuesSummary.total > 0) {
-                meta.push(`**Sub-issues:** ${issue.subIssuesSummary.completed}/${issue.subIssuesSummary.total} (${issue.subIssuesSummary.percentCompleted}%)`);
-            }
-
-            // Project field values
-            const fieldValues = item.fieldValues?.nodes ?? [];
-            for (const fv of fieldValues) {
-                if (fv.field?.name === 'Title') { continue; }
-                const val = this.formatFieldValue(fv);
-                if (val) {
-                    meta.push(`**${fv.field?.name}:** ${val}`);
-                }
-            }
-
-            if (meta.length > 0) {
-                lines.push(...meta);
-                lines.push('');
-            }
-
-            lines.push('---');
-            lines.push('');
-            lines.push(issue.body || NO_DESCRIPTION_PLACEHOLDER);
-        } else if (content.__typename === 'DraftIssue') {
-            const draft = content as DraftIssueContent;
-            lines.push(`# ${draft.title}`);
-            lines.push('');
-            lines.push('> **Draft Issue**');
-            lines.push('');
-
-            const fieldValues = item.fieldValues?.nodes ?? [];
-            for (const fv of fieldValues) {
-                if (fv.field?.name === 'Title') { continue; }
-                const val = this.formatFieldValue(fv);
-                if (val) {
-                    lines.push(`**${fv.field?.name}:** ${val}`);
-                }
-            }
-
-            lines.push('');
-            lines.push('---');
-            lines.push(draft.body || NO_DESCRIPTION_PLACEHOLDER);
-            lines.push(draft.body || '*No description provided.*');
-        } else if (content.__typename === 'PullRequest') {
-            const pr = content as PullRequestContent;
-            lines.push(`# ${pr.title}`);
-            lines.push('');
-            lines.push(`> **Pull Request:** ${pr.repository.nameWithOwner}#${pr.number} · **State:** ${pr.state} · [Open in GitHub](${pr.url})`);
-            lines.push('');
-
-            if (pr.assignees?.nodes?.length) {
-                lines.push(`**Assignees:** ${pr.assignees.nodes.map(a => `@${a.login}`).join(', ')}`);
-            }
-
-            const fieldValues = item.fieldValues?.nodes ?? [];
-            for (const fv of fieldValues) {
-                if (fv.field?.name === 'Title') { continue; }
-                const val = this.formatFieldValue(fv);
-                if (val) {
-                    lines.push(`**${fv.field?.name}:** ${val}`);
-                }
-            }
-        }
-
-        lines.push('');
-        return lines.join('\n');
-    }
-
-    private parseEditableContent(item: ProjectItem, text: string): { title: string; body: string } {
-        const lines = text.replace(/\r\n/g, '\n').split('\n');
-        const existingTitle = item.content?.title ?? 'Issue';
-        const titleLine = lines.find(line => line.startsWith('# '));
-        const title = titleLine ? titleLine.slice(2).trim() || existingTitle : existingTitle;
-
-        const separatorIndex = lines.findIndex(line => line.trim() === '---');
-        let bodyLines = separatorIndex >= 0 ? lines.slice(separatorIndex + 1) : [];
-        while (bodyLines.length > 0 && bodyLines[0].trim() === '') {
-            bodyLines = bodyLines.slice(1);
-        }
-        while (bodyLines.length > 0 && bodyLines[bodyLines.length - 1].trim() === '') {
-            bodyLines = bodyLines.slice(0, -1);
-        }
-
-        let body = bodyLines.join('\n');
-        if (body === NO_DESCRIPTION_PLACEHOLDER) {
-            body = '';
-        }
-
-        return { title, body };
-    }
-
-    private formatFieldValue(fv: FieldValue): string {
-        switch (fv.__typename) {
-            case 'ProjectV2ItemFieldTextValue':
-                return fv.text || '';
-            case 'ProjectV2ItemFieldNumberValue':
-                return String(fv.number ?? '');
-            case 'ProjectV2ItemFieldDateValue':
-                return fv.date || '';
-            case 'ProjectV2ItemFieldSingleSelectValue':
-                return fv.name || '';
-            case 'ProjectV2ItemFieldIterationValue':
-                return fv.title || '';
-            default:
-                return '';
-        }
     }
 
     dispose(): void {

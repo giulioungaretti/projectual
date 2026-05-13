@@ -1,13 +1,15 @@
 import * as vscode from 'vscode';
 import { ProjectModel } from '../models/project-model';
-import { ProjectItem, IssueContent } from '../api/types';
+import { ProjectItem, IssueContent, ProjectSingleSelectField, ProjectIterationField } from '../api/types';
 import { GraphQLClient } from '../api/graphql-client';
+import { IssueDocumentProvider, ISSUE_SCHEME } from '../webview/issue-document-provider';
 import * as queries from '../api/queries';
 
 export function registerFieldCommands(
     context: vscode.ExtensionContext,
     model: ProjectModel,
     client: GraphQLClient,
+    docProvider: IssueDocumentProvider,
 ): void {
     context.subscriptions.push(
         vscode.commands.registerCommand('ghProjects.changeAssignees', async (node?: unknown) => {
@@ -122,6 +124,97 @@ export function registerFieldCommands(
                 await model.loadProjectItems(itemNode.projectId);
             } catch (err) {
                 vscode.window.showErrorMessage(`Failed to update labels: ${err}`);
+            }
+        }),
+
+        // --- Document-aware commands (triggered by CodeLens) ---
+
+        vscode.commands.registerCommand('ghProjects.changeFieldFromDocument', async (uri: vscode.Uri, fieldName: string) => {
+            const info = docProvider.getDocumentInfo(uri);
+            if (!info) { return; }
+
+            const detail = model.getProjectDetail(info.projectId);
+            if (!detail) { return; }
+
+            const field = detail.fields.nodes.find(f => f.name === fieldName);
+            if (!field) { return; }
+
+            if (field.__typename === 'ProjectV2SingleSelectField') {
+                const ssField = field as ProjectSingleSelectField;
+                const currentFv = info.item.fieldValues.nodes.find(
+                    fv => fv.__typename === 'ProjectV2ItemFieldSingleSelectValue' && fv.field?.name === fieldName
+                );
+                const currentId = currentFv?.__typename === 'ProjectV2ItemFieldSingleSelectValue' ? currentFv.optionId : undefined;
+
+                const pick = await vscode.window.showQuickPick(
+                    ssField.options.map(o => ({
+                        label: o.name,
+                        description: o.id === currentId ? '(current)' : '',
+                        optionId: o.id,
+                    })),
+                    { placeHolder: `Select ${fieldName}` }
+                );
+                if (!pick) { return; }
+
+                try {
+                    if (fieldName === 'Status') {
+                        await model.updateItemStatus(info.projectId, info.item.id, field.id, pick.optionId);
+                    } else {
+                        await model.updateItemField(info.projectId, info.item.id, field.id, { singleSelectOptionId: pick.optionId });
+                    }
+                    vscode.window.showInformationMessage(`${fieldName} changed to "${pick.label}".`);
+                } catch (err) {
+                    vscode.window.showErrorMessage(`Failed to change ${fieldName}: ${err}`);
+                }
+            } else if (field.__typename === 'ProjectV2IterationField') {
+                const itField = field as ProjectIterationField;
+                const currentFv = info.item.fieldValues.nodes.find(
+                    fv => fv.__typename === 'ProjectV2ItemFieldIterationValue' && fv.field?.name === fieldName
+                );
+                const currentId = currentFv?.__typename === 'ProjectV2ItemFieldIterationValue' ? currentFv.iterationId : undefined;
+
+                const pick = await vscode.window.showQuickPick(
+                    itField.configuration.iterations.map(it => ({
+                        label: it.title,
+                        description: it.id === currentId ? '(current)' : `starts ${it.startDate}`,
+                        iterationId: it.id,
+                    })),
+                    { placeHolder: `Select ${fieldName}` }
+                );
+                if (!pick) { return; }
+
+                try {
+                    await model.updateItemField(info.projectId, info.item.id, field.id, { iterationId: pick.iterationId });
+                    vscode.window.showInformationMessage(`${fieldName} changed to "${pick.label}".`);
+                } catch (err) {
+                    vscode.window.showErrorMessage(`Failed to change ${fieldName}: ${err}`);
+                }
+            }
+        }),
+
+        vscode.commands.registerCommand('ghProjects.changeAssigneesFromDocument', async (uri: vscode.Uri) => {
+            const info = docProvider.getDocumentInfo(uri);
+            if (!info) { return; }
+            // Reuse the tree-node command shape
+            await vscode.commands.executeCommand('ghProjects.changeAssignees', {
+                type: 'item', projectId: info.projectId, item: info.item,
+            });
+        }),
+
+        vscode.commands.registerCommand('ghProjects.changeLabelsFromDocument', async (uri: vscode.Uri) => {
+            const info = docProvider.getDocumentInfo(uri);
+            if (!info) { return; }
+            await vscode.commands.executeCommand('ghProjects.changeLabels', {
+                type: 'item', projectId: info.projectId, item: info.item,
+            });
+        }),
+
+        vscode.commands.registerCommand('ghProjects.openInGitHubFromDocument', async (uri: vscode.Uri) => {
+            const info = docProvider.getDocumentInfo(uri);
+            if (!info) { return; }
+            const content = info.item.content;
+            if (content && 'url' in content) {
+                vscode.env.openExternal(vscode.Uri.parse((content as { url: string }).url));
             }
         }),
     );

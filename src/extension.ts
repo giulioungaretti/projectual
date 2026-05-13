@@ -7,6 +7,10 @@ import { registerProjectCommands } from './commands/project-commands';
 import { registerIssueCommands } from './commands/issue-commands';
 import { registerFieldCommands } from './commands/field-commands';
 import { IssueDocumentProvider, ISSUE_SCHEME } from './webview/issue-document-provider';
+import { IssueCodeLensProvider } from './providers/issue-codelens-provider';
+import { IssueDiagnosticProvider } from './providers/issue-diagnostic-provider';
+import { IssueFoldingProvider } from './providers/issue-folding-provider';
+import { activateIssueDecorations } from './providers/issue-decoration-provider';
 
 export function activate(context: vscode.ExtensionContext): void {
     const auth = new GitHubAuth();
@@ -30,10 +34,22 @@ export function activate(context: vscode.ExtensionContext): void {
         issueDocProvider,
     );
 
+    // Register language features for issue documents
+    const issueSelector = { scheme: ISSUE_SCHEME };
+    const codeLensProvider = new IssueCodeLensProvider(model, issueDocProvider);
+    const diagnosticProvider = new IssueDiagnosticProvider(model, issueDocProvider);
+    const foldingProvider = new IssueFoldingProvider();
+    context.subscriptions.push(
+        vscode.languages.registerCodeLensProvider(issueSelector, codeLensProvider),
+        vscode.languages.registerFoldingRangeProvider(issueSelector, foldingProvider),
+        diagnosticProvider,
+    );
+    activateIssueDecorations(context);
+
     // Register all commands
     registerProjectCommands(context, model, auth, treeProvider);
     registerIssueCommands(context, model, client, issueDocProvider);
-    registerFieldCommands(context, model, client);
+    registerFieldCommands(context, model, client, issueDocProvider);
 
     // Set initial context values
     vscode.commands.executeCommand('setContext', 'ghProjects.groupBy', 'none');

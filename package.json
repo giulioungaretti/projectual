@@ -208,7 +208,8 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "@octokit/graphql": "^9.0.3"
+    "@octokit/graphql": "^9.0.3",
+    "yaml": "^2.9.0"
   },
   "devDependencies": {
     "@types/node": "^25.7.0",
