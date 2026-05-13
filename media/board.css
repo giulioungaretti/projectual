@@ -117,8 +117,34 @@ body {
     border-color: var(--vscode-focusBorder);
 }
 
+.card.blocked {
+    border-color: var(--vscode-errorForeground, #f44);
+    border-style: dashed;
+    opacity: 0.75;
+}
+
 .card.dragging {
     opacity: 0.5;
+}
+
+.card-blocked, .card-blocking {
+    font-size: 0.75em;
+    margin-top: 4px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.card-blocked {
+    background: color-mix(in srgb, var(--vscode-errorForeground, #f44) 15%, transparent);
+    color: var(--vscode-errorForeground, #f44);
+}
+
+.card-blocking {
+    background: color-mix(in srgb, var(--vscode-charts-yellow, #e5c07b) 15%, transparent);
+    color: var(--vscode-charts-yellow, #e5c07b);
 }
 
 .card-title {

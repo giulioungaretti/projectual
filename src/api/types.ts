@@ -136,6 +136,8 @@ export interface IssueContent {
     parent: { id: string } | null;
     subIssues: { nodes: SubIssueRef[] };
     subIssuesSummary: { total: number; completed: number; percentCompleted: number };
+    blockedBy: { totalCount: number; nodes: BlockingRef[] };
+    blocking: { totalCount: number; nodes: BlockingRef[] };
 }
 
 export interface PullRequestContent {
@@ -174,6 +176,12 @@ export interface SubIssueRef {
     title: string;
     number: number;
     state: 'OPEN' | 'CLOSED';
+    url: string;
+}
+
+export interface BlockingRef {
+    number: number;
+    title: string;
     url: string;
 }
 

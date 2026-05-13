@@ -200,6 +200,8 @@
                 if (val === 'draft') return content?.__typename === 'DraftIssue';
                 if (val === 'pr') return content?.__typename === 'PullRequest';
                 if (val === 'issue') return content?.__typename === 'Issue';
+                if (val === 'blocked') return (content?.blockedBy?.totalCount || 0) > 0;
+                if (val === 'blocking') return (content?.blocking?.totalCount || 0) > 0;
                 return false;
             }
             case 'milestone': {
@@ -493,9 +495,12 @@
         if (!content) return '';
 
         const title = content.title || '(Untitled)';
+        const isBlocked = content.__typename === 'Issue' && (content.blockedBy?.totalCount || 0) > 0;
+        const isBlocking = content.__typename === 'Issue' && (content.blocking?.totalCount || 0) > 0;
         let metaHtml = '';
         let labelsHtml = '';
         let assigneesHtml = '';
+        let blockedHtml = '';
 
         if (content.__typename === 'Issue' || content.__typename === 'PullRequest') {
             const repo = content.repository?.nameWithOwner || '';
@@ -522,15 +527,26 @@
                     ).join('') +
                     '</div>';
             }
+
+            if (isBlocked) {
+                const blockers = content.blockedBy.nodes.map(b => `#${b.number} ${b.title}`).join(', ');
+                blockedHtml = `<div class="card-blocked" title="Blocked by: ${escapeHtml(blockers)}">🚫 Blocked by ${content.blockedBy.nodes.map(b => '#' + b.number).join(', ')}</div>`;
+            }
+            if (isBlocking) {
+                blockedHtml += `<div class="card-blocking" title="Blocking other issues">⏳ Blocking ${content.blocking.nodes.map(b => '#' + b.number).join(', ')}</div>`;
+            }
         } else if (content.__typename === 'DraftIssue') {
             metaHtml = '<span class="card-repo">Draft</span>';
         }
 
+        const cardClass = 'card' + (isBlocked ? ' blocked' : '');
+
         return `
-            <div class="card" draggable="true" data-item-id="${escapeHtml(item.id)}"
+            <div class="${cardClass}" draggable="true" data-item-id="${escapeHtml(item.id)}"
                  data-action="open-item">
                 <div class="card-title">${escapeHtml(title)}</div>
                 <div class="card-meta">${metaHtml}</div>
+                ${blockedHtml}
                 ${labelsHtml}
                 ${assigneesHtml}
             </div>

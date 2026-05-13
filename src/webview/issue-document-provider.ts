@@ -200,8 +200,30 @@ export class IssueDocumentProvider implements vscode.FileSystemProvider {
             if (issue.subIssuesSummary && issue.subIssuesSummary.total > 0) {
                 fm.sub_issues = `${issue.subIssuesSummary.completed}/${issue.subIssuesSummary.total} (${issue.subIssuesSummary.percentCompleted}%)`;
             }
+            if (issue.blockedBy?.totalCount > 0) {
+                fm.blocked_by = issue.blockedBy.nodes.map(b => `#${b.number}`);
+            }
+            if (issue.blocking?.totalCount > 0) {
+                fm.blocking = issue.blocking.nodes.map(b => `#${b.number}`);
+            }
             this.addFieldValuesToFrontmatter(fm, item);
             body = issue.body || NO_DESCRIPTION_PLACEHOLDER;
+
+            // Append blocked-by section
+            if (issue.blockedBy?.nodes?.length) {
+                const blockedList = issue.blockedBy.nodes.map(b =>
+                    `- 🚫 [#${b.number} ${b.title}](${b.url})`
+                ).join('\n');
+                body += `\n\n## Blocked by\n\n${blockedList}`;
+            }
+
+            // Append blocking section
+            if (issue.blocking?.nodes?.length) {
+                const blockingList = issue.blocking.nodes.map(b =>
+                    `- ⏳ [#${b.number} ${b.title}](${b.url})`
+                ).join('\n');
+                body += `\n\n## Blocking\n\n${blockingList}`;
+            }
 
             // Append sub-issues section if present
             if (issue.subIssues?.nodes?.length) {

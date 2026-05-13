@@ -83,6 +83,8 @@ export const GET_PROJECT_ITEMS = `
                 parent { id }
                 subIssues(first: 50) { nodes { id title number state url } }
                 subIssuesSummary { total completed percentCompleted }
+                blockedBy(first: 10) { totalCount nodes { number title url } }
+                blocking(first: 10) { totalCount nodes { number title url } }
               }
               ... on PullRequest {
                 __typename id title number state url
