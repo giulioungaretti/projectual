@@ -60,8 +60,6 @@ export class IssuePanel {
 
         this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
         this.model.onDidChange(() => this.refreshItem(), null, this.disposables);
-
-        this.update();
     }
 
     private refreshItem(): void {
@@ -111,6 +109,9 @@ export class IssuePanel {
                 }
                 break;
             }
+            case 'ready':
+                await this.update();
+                break;
         }
     }
 

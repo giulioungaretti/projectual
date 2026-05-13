@@ -59,8 +59,6 @@ export class BoardPanel {
         this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
 
         this.model.onDidChange(() => this.update(), null, this.disposables);
-
-        this.update();
     }
 
     async update(): Promise<void> {
@@ -99,6 +97,9 @@ export class BoardPanel {
             }
             case 'refresh':
                 await this.model.loadProjectItems(this.projectId);
+                break;
+            case 'ready':
+                await this.update();
                 break;
             case 'create-draft': {
                 const m = msg as { type: string; title: string };
