@@ -30,6 +30,7 @@ body {
     margin-bottom: 16px;
     padding-bottom: 12px;
     border-bottom: 1px solid var(--vscode-panel-border);
+    flex-wrap: wrap;
 }
 
 .board-toolbar h2 {
@@ -180,4 +181,143 @@ body {
     padding: 20px;
     color: var(--vscode-descriptionForeground);
     font-style: italic;
+}
+
+/* Toolbar groups */
+.toolbar-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.toolbar-label {
+    font-size: 0.85em;
+    color: var(--vscode-descriptionForeground);
+    white-space: nowrap;
+}
+
+.toolbar-select {
+    background: var(--vscode-dropdown-background);
+    color: var(--vscode-dropdown-foreground);
+    border: 1px solid var(--vscode-dropdown-border);
+    border-radius: 4px;
+    padding: 3px 8px;
+    font-size: var(--vscode-font-size);
+    font-family: inherit;
+}
+
+/* Label filter chips */
+.label-filters {
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.filter-chip {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 0.75em;
+    font-weight: 500;
+    cursor: pointer;
+    opacity: 0.5;
+    border: 1px solid transparent;
+    background: var(--chip-bg, var(--vscode-badge-background));
+    color: var(--chip-fg, var(--vscode-badge-foreground));
+    transition: opacity 0.15s, border-color 0.15s;
+}
+
+.filter-chip:hover {
+    opacity: 0.8;
+}
+
+.filter-chip.active {
+    opacity: 1;
+    border-color: var(--vscode-focusBorder);
+}
+
+.filter-chip.clear-chip {
+    background: var(--vscode-button-secondaryBackground);
+    color: var(--vscode-button-secondaryForeground);
+    opacity: 1;
+}
+
+/* Swimlane layout */
+.board-swimlaned {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    overflow-x: auto;
+    min-height: 300px;
+}
+
+.swimlane-header {
+    display: flex;
+    border-bottom: 2px solid var(--vscode-panel-border);
+    position: sticky;
+    top: 0;
+    background: var(--vscode-editor-background);
+    z-index: 2;
+}
+
+.swimlane-header .swimlane-label-cell {
+    min-width: 140px;
+    max-width: 140px;
+}
+
+.swimlane-col-header {
+    min-width: var(--column-width);
+    max-width: var(--column-width);
+    padding: 8px 12px;
+    font-weight: 600;
+    text-align: center;
+    border-left: 1px solid var(--vscode-panel-border);
+}
+
+.swimlane-row {
+    display: flex;
+    border-bottom: 1px solid var(--vscode-panel-border);
+    min-height: 80px;
+}
+
+.swimlane-label-cell {
+    min-width: 140px;
+    max-width: 140px;
+    padding: 10px 12px;
+    display: flex;
+    align-items: flex-start;
+    justify-content: flex-start;
+    background: var(--vscode-sideBar-background);
+    border-right: 1px solid var(--vscode-panel-border);
+    position: sticky;
+    left: 0;
+    z-index: 1;
+}
+
+.swimlane-badge {
+    font-size: 0.8em;
+    font-weight: 500;
+    padding: 2px 8px;
+    border-radius: 10px;
+    white-space: nowrap;
+}
+
+.swimlane-badge.muted {
+    background: var(--vscode-badge-background);
+    color: var(--vscode-badge-foreground);
+}
+
+.swimlane-cell {
+    min-width: var(--column-width);
+    max-width: var(--column-width);
+    border-left: 1px solid var(--vscode-panel-border);
+    padding: 4px;
+}
+
+.swimlane-cell .column-body {
+    min-height: 60px;
+    padding: 4px;
+}
+
+.empty-cell {
+    min-height: 40px;
 }

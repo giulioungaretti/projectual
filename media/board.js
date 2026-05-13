@@ -3,7 +3,9 @@
     const vscode = acquireVsCodeApi();
     const root = document.getElementById('board-root');
 
-    let currentData = { project: null, items: [], statusField: null };
+    let currentData = { project: null, items: [], statusField: null, allLabels: [], swimlaneFields: [] };
+    let swimlaneMode = 'none'; // 'none' | 'label' | 'assignee' | field id
+    let activeLabels = new Set(); // selected labels for filtering (empty = show all)
 
     window.addEventListener('message', event => {
         const msg = event.data;
@@ -13,42 +15,122 @@
         }
     });
 
-    // Event delegation — handles all clicks via data attributes
+    // Event delegation
     root.addEventListener('click', function (e) {
-        const actionTarget = e.target.closest('[data-action]');
-        if (actionTarget) {
-            switch (actionTarget.dataset.action) {
-                case 'refresh':
-                    vscode.postMessage({ type: 'refresh' });
-                    return;
-                case 'open-item': {
-                    const itemId = actionTarget.dataset.itemId;
-                    if (itemId) {
-                        vscode.postMessage({ type: 'open-item', itemId });
-                    }
-                    return;
+        const target = e.target.closest('[data-action]');
+        if (!target) return;
+        switch (target.dataset.action) {
+            case 'refresh':
+                vscode.postMessage({ type: 'refresh' });
+                break;
+            case 'open-item':
+                if (target.dataset.itemId) {
+                    vscode.postMessage({ type: 'open-item', itemId: target.dataset.itemId });
                 }
+                break;
+            case 'toggle-label': {
+                const label = target.dataset.label;
+                if (activeLabels.has(label)) {
+                    activeLabels.delete(label);
+                } else {
+                    activeLabels.add(label);
+                }
+                render();
+                break;
             }
+            case 'clear-labels':
+                activeLabels.clear();
+                render();
+                break;
+        }
+    });
+
+    root.addEventListener('change', function (e) {
+        const target = e.target.closest('[data-action]');
+        if (!target) return;
+        if (target.dataset.action === 'swimlane-select') {
+            swimlaneMode = target.value;
+            render();
         }
     });
 
     function render() {
-        const { project, items, statusField } = currentData;
+        const { project, items, statusField, allLabels, swimlaneFields } = currentData;
         if (!project || !statusField) {
             root.innerHTML = '<div class="loading">No project data yet.</div>';
             return;
         }
 
+        // Filter items by selected labels
+        let filteredItems = items || [];
+        if (activeLabels.size > 0) {
+            filteredItems = filteredItems.filter(item => {
+                const labels = item.content?.labels?.nodes || [];
+                return labels.some(l => activeLabels.has(l.name));
+            });
+        }
+
         const options = statusField.options || [];
+
+        // Build toolbar
+        let html = renderToolbar(project, allLabels || [], swimlaneFields || []);
+
+        // Render board based on swimlane mode
+        if (swimlaneMode === 'none') {
+            html += renderFlatBoard(filteredItems, options);
+        } else {
+            html += renderSwimlanedBoard(filteredItems, options);
+        }
+
+        root.innerHTML = html;
+        setupDragAndDrop();
+    }
+
+    function renderToolbar(project, allLabels, swimlaneFields) {
+        let html = '<div class="board-toolbar">';
+        html += `<h2>${escapeHtml(project.title)}</h2>`;
+
+        // Swimlane dropdown
+        html += '<div class="toolbar-group">';
+        html += '<label class="toolbar-label">Swimlanes:</label>';
+        html += '<select data-action="swimlane-select" class="toolbar-select">';
+        html += `<option value="none"${swimlaneMode === 'none' ? ' selected' : ''}>None</option>`;
+        html += `<option value="label"${swimlaneMode === 'label' ? ' selected' : ''}>Label</option>`;
+        html += `<option value="assignee"${swimlaneMode === 'assignee' ? ' selected' : ''}>Assignee</option>`;
+        (swimlaneFields || []).forEach(f => {
+            html += `<option value="${escapeHtml(f.id)}"${swimlaneMode === f.id ? ' selected' : ''}>${escapeHtml(f.name)}</option>`;
+        });
+        html += '</select></div>';
+
+        // Label filter chips
+        if (allLabels && allLabels.length > 0) {
+            html += '<div class="toolbar-group label-filters">';
+            html += '<label class="toolbar-label">Labels:</label>';
+            allLabels.forEach(l => {
+                const isActive = activeLabels.has(l.name);
+                html += `<span class="filter-chip${isActive ? ' active' : ''}" `
+                    + `data-action="toggle-label" data-label="${escapeHtml(l.name)}" `
+                    + `style="--chip-bg:#${l.color};--chip-fg:${getContrastColor(l.color)}">`
+                    + `${escapeHtml(l.name)}</span>`;
+            });
+            if (activeLabels.size > 0) {
+                html += '<span class="filter-chip clear-chip" data-action="clear-labels">✕ Clear</span>';
+            }
+            html += '</div>';
+        }
+
+        html += '<button data-action="refresh">↻ Refresh</button>';
+        html += '</div>';
+        return html;
+    }
+
+    function renderFlatBoard(items, statusOptions) {
         const grouped = {};
         const noStatus = [];
+        statusOptions.forEach(opt => { grouped[opt.id] = []; });
 
-        options.forEach(opt => { grouped[opt.id] = []; });
-
-        (items || []).forEach(item => {
-            const statusFv = (item.fieldValues?.nodes || []).find(
-                fv => fv.__typename === 'ProjectV2ItemFieldSingleSelectValue' && fv.field?.name === 'Status'
-            );
+        items.forEach(item => {
+            const statusFv = getStatusFieldValue(item);
             if (statusFv && grouped[statusFv.optionId]) {
                 grouped[statusFv.optionId].push(item);
             } else {
@@ -56,28 +138,122 @@
             }
         });
 
-        let html = `
-            <div class="board-toolbar">
-                <h2>${escapeHtml(project.title)}</h2>
-                <button data-action="refresh">↻ Refresh</button>
-            </div>
-            <div class="board">
-        `;
-
-        for (const opt of options) {
-            const colItems = grouped[opt.id] || [];
-            html += renderColumn(opt.name, opt.id, colItems);
+        let html = '<div class="board">';
+        for (const opt of statusOptions) {
+            html += renderColumn(opt.name, opt.id, grouped[opt.id] || []);
         }
-
         if (noStatus.length > 0) {
             html += renderColumn('No Status', '__none__', noStatus);
         }
+        html += '</div>';
+        return html;
+    }
+
+    function renderSwimlanedBoard(items, statusOptions) {
+        // Group items into swimlane buckets
+        const lanes = new Map(); // laneKey → { label, items[] }
+        const noLaneItems = [];
+
+        items.forEach(item => {
+            const laneKeys = getSwimlaneKeys(item);
+            if (laneKeys.length === 0) {
+                noLaneItems.push(item);
+            } else {
+                laneKeys.forEach(key => {
+                    if (!lanes.has(key.id)) {
+                        lanes.set(key.id, { label: key.label, color: key.color, items: [] });
+                    }
+                    lanes.get(key.id).items.push(item);
+                });
+            }
+        });
+
+        let html = '<div class="board-swimlaned">';
+
+        // Render header row (status columns)
+        html += '<div class="swimlane-header">';
+        html += '<div class="swimlane-label-cell"></div>';
+        statusOptions.forEach(opt => {
+            html += `<div class="swimlane-col-header">${escapeHtml(opt.name)}</div>`;
+        });
+        html += '</div>';
+
+        // Render each swimlane
+        for (const [, lane] of lanes) {
+            html += renderSwimlaneRow(lane.label, lane.color, lane.items, statusOptions);
+        }
+        if (noLaneItems.length > 0) {
+            const noLabel = swimlaneMode === 'label' ? 'No Label'
+                : swimlaneMode === 'assignee' ? 'Unassigned'
+                : 'None';
+            html += renderSwimlaneRow(noLabel, null, noLaneItems, statusOptions);
+        }
 
         html += '</div>';
-        root.innerHTML = html;
+        return html;
+    }
 
-        // Set up drag listeners after render
-        setupDragAndDrop();
+    function renderSwimlaneRow(label, color, items, statusOptions) {
+        const grouped = {};
+        statusOptions.forEach(opt => { grouped[opt.id] = []; });
+        items.forEach(item => {
+            const statusFv = getStatusFieldValue(item);
+            if (statusFv && grouped[statusFv.optionId]) {
+                grouped[statusFv.optionId].push(item);
+            }
+        });
+
+        let html = '<div class="swimlane-row">';
+        html += '<div class="swimlane-label-cell">';
+        if (color) {
+            html += `<span class="swimlane-badge" style="background:#${color};color:${getContrastColor(color)}">${escapeHtml(label)}</span>`;
+        } else {
+            html += `<span class="swimlane-badge muted">${escapeHtml(label)}</span>`;
+        }
+        html += '</div>';
+
+        statusOptions.forEach(opt => {
+            const colItems = grouped[opt.id] || [];
+            html += '<div class="swimlane-cell">';
+            html += `<div class="column-body" data-status-id="${escapeHtml(opt.id)}">`;
+            if (colItems.length === 0) {
+                html += '<div class="empty-cell"></div>';
+            } else {
+                colItems.forEach(item => { html += renderCard(item); });
+            }
+            html += '</div></div>';
+        });
+
+        html += '</div>';
+        return html;
+    }
+
+    function getSwimlaneKeys(item) {
+        const content = item.content;
+        if (!content) return [];
+
+        if (swimlaneMode === 'label') {
+            const labels = content.labels?.nodes || [];
+            return labels.map(l => ({ id: l.name, label: l.name, color: l.color }));
+        }
+        if (swimlaneMode === 'assignee') {
+            const assignees = content.assignees?.nodes || [];
+            return assignees.map(a => ({ id: a.login, label: a.login, color: null }));
+        }
+        // Custom single-select field
+        const fv = (item.fieldValues?.nodes || []).find(
+            fv => fv.__typename === 'ProjectV2ItemFieldSingleSelectValue' && fv.field?.id === swimlaneMode
+        );
+        if (fv) {
+            return [{ id: fv.optionId || fv.name, label: fv.name, color: null }];
+        }
+        return [];
+    }
+
+    function getStatusFieldValue(item) {
+        return (item.fieldValues?.nodes || []).find(
+            fv => fv.__typename === 'ProjectV2ItemFieldSingleSelectValue' && fv.field?.name === 'Status'
+        );
     }
 
     function renderColumn(name, optionId, items) {

@@ -66,11 +66,30 @@ export class BoardPanel {
         const items = this.model.getProjectItems(this.projectId);
         const statusField = this.model.getStatusField(this.projectId);
 
+        // Collect all unique labels across items for the filter
+        const labelSet = new Map<string, { name: string; color: string }>();
+        for (const item of items) {
+            if (item.content?.__typename === 'Issue') {
+                for (const label of (item.content as any).labels?.nodes ?? []) {
+                    if (!labelSet.has(label.name)) {
+                        labelSet.set(label.name, { name: label.name, color: label.color });
+                    }
+                }
+            }
+        }
+
+        // Collect single-select fields (for swimlane options, excluding Status)
+        const swimlaneFields = (detail?.fields.nodes ?? [])
+            .filter((f: any) => f.__typename === 'ProjectV2SingleSelectField' && f.name !== 'Status')
+            .map((f: any) => ({ id: f.id, name: f.name, options: f.options }));
+
         this.panel.webview.postMessage({
             type: 'update-board',
             project: detail,
             items: items.filter(i => i.type !== 'REDACTED'),
             statusField,
+            allLabels: Array.from(labelSet.values()),
+            swimlaneFields,
         });
     }
 
